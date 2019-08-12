@@ -1,6 +1,8 @@
 import re
 from copy import copy
-phonetic_map_path = "ru_phonet_map.txt"
+import sys
+
+phonetic_map_path = sys.argv[1]#"ru_phonet_map_ext.txt"
 
 def read_phonetic_map(path):
     ph_map = open(phonetic_map_path, "r")
@@ -106,4 +108,32 @@ text1 = """
 if __name__ == "__main__":
     mapping = PhoneticMapper()
 
-    print(mapping(text))
+    # print(mapping(text1))
+
+    import sys
+
+    everything = []
+
+    seen = set()
+    
+    for line in sys.stdin:
+
+        word, normal, _ = line.strip().split()
+        # count = int(count_str)
+
+        ph_map = (normal, mapping.map_word(normal))
+
+        seen.add(ph_map)
+
+        # everything.append((word, mapping.map_word(word), count))
+        # print(everything)
+        # sys.exit()
+
+        # print(line.split()[0], mapping(line), end="")
+
+    everything = list(seen)
+
+    everything.sort(key=lambda x: x[1])
+
+    for e in everything:
+        print("%s\t%s\t%s" % (e[0], e[1], phonetic_map_path.split(".")[0]))

@@ -6,7 +6,7 @@ import re
 from collections import Counter
 from nltk import RegexpTokenizer
 
-nltk_regexp = "[A-Za-zА-Яа-я-]+|[^\w\s]"
+nltk_regexp = "[A-Za-zА-Яа-я][A-Za-zА-Яа-я-]+|[^\w\s]|[0-9]+"
 
 # punct_chars = "[-!\"#$%&'()*+,/:;<=>?@[\]^_`{|}~—»«“”„….]" # add point .
 
@@ -88,6 +88,7 @@ def replace_accents_rus(sent_orig):
     sent = sent.replace("я̀", "я")
     sent = sent.replace(b"\u0301".decode('utf8'), "")
     sent = sent.replace(b"\u00AD".decode('utf8'), "")
+    sent = sent.replace(b"\u00A0".decode('utf8'), " ")
     sent = sent.replace(" ", " ")
     return sent
 

@@ -111,63 +111,113 @@ def find_pairs(word, dawg, max_cost):
             pair = [word, r[0]]
             pair.sort()
             pair_t = tuple(pair)
-            pairs.append(pair_t)
+            pairs.append((pair_t, r[1]))
     
     return pairs
+
+
+def compute_allowed_cost(word_len):
+    if word_len < 5:
+        allowed_cost = 1
+    elif word_len < 8:
+        allowed_cost = 2
+    else:
+        allowed_cost = 3
+    return allowed_cost
     
 
 if __name__ == "__main__":
-    import sys, argparse
+    import sys#, argparse
     
-    parser = argparse.ArgumentParser(description='Process some integers.')
-    parser.add_argument('word_list', metavar='W', type=str,
-                        help='file with list of files')
-    parser.add_argument('-m', dest='mode', type=str,
-                        help='depending on the mode stream/file reads and output words from stream or from the same file as dictionary')
-    parser.add_argument('-o', dest='output', type=str,
-                        help='destination to write word pairs in the mode \'file\'')
+    # parser = argparse.ArgumentParser(description='Process some integers.')
+    # parser.add_argument('word_list', metavar='W', type=str,
+    #                     help='file with list of files')
+    # parser.add_argument('-m', dest='mode', type=str,
+    #                     help='depending on the mode stream/file reads and output words from stream or from the same file as dictionary')
+    # parser.add_argument('-o', dest='output', type=str,
+    #                     help='destination to write word pairs in the mode \'file\'')
                         
-    args = parser.parse_args()
+    # args = parser.parse_args()
     
-    if args.mode == "stream":
-        pass    
-    elif args.mode == "file":
-        try:
-            out_sink = args.output
-        except:
-            print("Specify output destination for the mode \'file\'")
-            sys.exit()
-    else:
-        raise Exception("Unsupported mode. Choose \'stream\' or \'file\'")
+    # if args.mode == "stream":
+    #     pass    
+    # elif args.mode == "file":
+    #     try:
+    #         out_sink = args.output
+    #     except:
+    #         print("Specify output destination for the mode \'file\'")
+    #         sys.exit()
+    # else:
+    #     raise Exception("Unsupported mode. Choose \'stream\' or \'file\'")
 
     seen = set()        
     MAX_COST = 1
     
         
-    words = open(args.word_list, "rt").read().strip().split()
-    dawg = DawgDictionary(words)
+    # words = open(args.word_list, "rt").read().strip().split()
+    # dawg = DawgDictionary(words)
     
     
-    if args.mode == "stream":
-        for line in sys.stdin:
-            words = line.strip().split()
-            for ind, word in enumerate(words):
-                pairs = filter(lambda pair: pair not in seen, find_pairs(word, dawg, MAX_COST))
-                seen.update(pairs)
-                print(pairs)
-                for pair in pairs:
-                    print("%s %s" % (pair[0], pair[1]))
+    # if args.mode == "stream":
+    #     for line in sys.stdin:
+    #         words = line.strip().split()
+    #         for ind, word in enumerate(words):
+    #             pairs = filter(lambda pair: pair not in seen, find_pairs(word, dawg, MAX_COST))
+    #             seen.update(pairs)
+    #             print(pairs)
+    #             for pair in pairs:
+    #                 print("%s %s" % (pair[0], pair[1]))
     
-    elif args.mode == "file":
-        with open(args.output, "w") as pairs_sink:
-            for ind, word in enumerate(words):
-                pairs = filter(lambda pair: pair not in seen, find_pairs(word, dawg, MAX_COST))
-                seen.update(pairs)
-                for pair in pairs:
-                    pairs_sink.write("%s %s\n" % (pair[0], pair[1]))
+    # elif args.mode == "file":
+    #     with open(args.output, "w") as pairs_sink:
+    #         for ind, word in enumerate(words):
+    #             pairs = filter(lambda pair: pair not in seen, find_pairs(word, dawg, MAX_COST))
+    #             seen.update(pairs)
+    #             for pair in pairs:
+    #                 pairs_sink.write("%s %s\n" % (pair[0], pair[1]))
                 
-                    print("\rProcessed %d/%d" % (ind+1, len(words)))
+    #                 print("\rProcessed %d/%d" % (ind+1, len(words)))
 
-            print("%d pairs found" % len(seen))
+    #         print("%d pairs found" % len(seen))
+
+    phonetic_map_path = sys.argv[1]
+    max_cost = int(sys.argv[2])
+    output_path = sys.argv[3]
+
+    all_words = []
+    for line in open(phonetic_map_path, "r"):
+        if line.strip():
+            try:
+                normal_word, phonetic, relationship = line.strip().split("\t")
+            except:
+                print("Error: ", line)
+                sys.exit()
+            if phonetic: #phonetic can be empty in some mappings
+                all_words.append(phonetic)
+
+    all_words.sort()
+
+    dawg = DawgDictionary(all_words)
+
+    with open(output_path, "w") as sink:
+        for ind, word in enumerate(all_words):
+
+            allowed_cost = min(compute_allowed_cost(len(word)), max_cost)
+
+            pairs_with_cost = find_pairs(word, dawg, allowed_cost)
+
+            for pair, cost in pairs_with_cost:
+                # pairs are sorted by alphabet
+                if pair in seen: continue
+                sink.write("%s\t%s\tphonetic_sim_%d\n" % (pair[0], pair[1], cost))
+                seen.add(pair)
+
+            print("\r%d/%d" % (ind, len(all_words)), end="")
+            
+
+
+    
+
+
 
 
