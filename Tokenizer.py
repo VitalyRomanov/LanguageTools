@@ -6,7 +6,7 @@ import re
 from collections import Counter
 from nltk import RegexpTokenizer
 
-nltk_regexp = "[A-Za-zА-Яа-я][A-Za-zА-Яа-я-]+|[^\w\s]|[0-9]+"
+nltk_regexp = "[A-Za-zА-Яа-яё][A-Za-zА-Яа-яё-]+|[^\w\s]|[0-9]+"
 
 # punct_chars = "[-!\"#$%&'()*+,/:;<=>?@[\]^_`{|}~—»«“”„….]" # add point .
 
