@@ -126,7 +126,7 @@ class NltkWrapper:
             if tag[0].lower() in key_tokens:
                 tags[ind] = (tags[ind][0], tags[ind][0].lower())
         parsed = self.grammar_parser.parse(tags)
-        return [" ".join([token for token, pos in s.leaves()]) for s in parsed.subtrees() if "NP" in s.label()]
+        return ["_".join([token for token, pos in s.leaves()]) for s in parsed.subtrees() if "NP" in s.label()]
 
 
 
