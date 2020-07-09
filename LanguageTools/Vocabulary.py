@@ -4,7 +4,7 @@ from numpy import array
 import numpy as np
 import pickle as p
 from time import time
-import mmh3
+# import mmh3
 
 class Vocabulary:
 
@@ -19,15 +19,24 @@ class Vocabulary:
 
     def add(self, tokens):
         for token in tokens:
-            if token in self.ids:
-                self.count[self.ids[token]] += 1
-            else:
-                new_id = len(self.ids)
-                self.ids[token] = new_id
-                self.inv_ids[new_id] = token
-                self.count[new_id] = 1
+            self.add_token(token)
 
         self.prob_valid = False
+
+    def add_token(self, token):
+        if token in self.ids:
+            self.count[self.ids[token]] += 1
+        else:
+            new_id = len(self.ids)
+            self.ids[token] = new_id
+            self.inv_ids[new_id] = token
+            self.count[new_id] = 1
+
+    def drop_oov(self, tokens):
+        return (self.is_oov(t) for t in tokens)
+
+    def is_oov(self, token):
+        return token in self.ids
 
     @property
     def total_words(self):
@@ -84,31 +93,31 @@ class Vocabulary:
         return list(choice(limit_top, size=n_samples, p=p))
 
     def save(self, destination):
-        # p.dump(self, open(destination, "wb"))
+        p.dump(self, open(destination, "wb"))
         
-        with open(destination, "w", encoding="utf8") as voc_sink:
-            voc_sink.write("Version: %d\n" % time())
-            for token, token_id in self.ids.items():
-                voc_sink.write("%d\t%s\t%d\n" % (token_id, token, self.count[token_id]))
+        # with open(destination, "w", encoding="utf8") as voc_sink:
+        #     voc_sink.write("Version: %d\n" % time())
+        #     for token, token_id in self.ids.items():
+        #         voc_sink.write("%d\t%s\t%d\n" % (token_id, token, self.count[token_id]))
 
 
 
     @classmethod
     def load(self, location):
 
-        voc = Vocabulary()
-        with open(location, "r", encoding="utf8") as voc_source:
-            for ind, line in enumerate(voc_source):
-                if ind == 0 or ind == 1: continue
-                if line.strip():
-                    token_id, token, freq = line.strip().split()
-                    voc.ids[token] = token_id
-                    voc.inv_ids[token_id] = token
-                    voc.count[token_id] = int(freq)
-
-        voc.calculate_prob()
-        return voc
-        # return p.load(open(location, "rb"))
+        # voc = Vocabulary()
+        # with open(location, "r", encoding="utf8") as voc_source:
+        #     for ind, line in enumerate(voc_source):
+        #         if ind == 0 or ind == 1: continue
+        #         if line.strip():
+        #             token_id, token, freq = line.strip().split()
+        #             voc.ids[token] = token_id
+        #             voc.inv_ids[token_id] = token
+        #             voc.count[token_id] = int(freq)
+        #
+        # voc.calculate_prob()
+        # return voc
+        return p.load(open(location, "rb"))
 
 
 if __name__ == "__main__":
