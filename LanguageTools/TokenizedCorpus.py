@@ -84,6 +84,8 @@ class TokenizedCorpus:
                 self.vocab.add_token(token.text)
 
         transformed_doc = [(self.vocab[t.text], t.tailspace) for t in doc]
+        # switch to numpy's structured array?
+        # it appears that pickled structured array occupies about three times as much space as list of tuples
         serialized_doc = p.dumps(transformed_doc, protocol=4)
 
         doc_id = len(self.index)
