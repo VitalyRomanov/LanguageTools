@@ -13,30 +13,46 @@ class WikiReader:
     def __init__(self, fname):
         self.fname = fname
         self.file = None
+        self.cached_len = None
+
+        len(self)
+
+    def __len__(self):
+        if self.cached_len is None:
+            self.cached_len = 0
+            with open(self.fname) as file:
+                for _ in file.readline():
+                    self.cached_len += 1
+        return self.cached_len
 
     def __iter__(self):
         if self.file is not None:
             self.file.close()
         self.file = open(self.fname)
+        self.cindex = 0
         return self
 
     def __next__(self):
         try:
+            print(f"\r{self.cindex}/{len(self)}", end="")
+            self.cindex += 1
             return json.loads(self.file.readline())["text"]
         except:
             raise StopIteration()
 
-corpus = WikiReader(sys.argv[1])
+corpus = WikiReader("/home/ltv/data/local_run/wikipedia/wiki_ru.joined")
 
 #%%
 print(os.getcwd())
 #%%
 dc = DocumentCorpus("test_doc_corpus", "ru")
-dc.add_docs(corpus)
+
+dc.add_docs(corpus, save_instantly=False)
 dc.save()
 
 #%%
 retr = BinaryRetrieval(dc)
+retr.save("binary_retr")
 
 #%%
 
