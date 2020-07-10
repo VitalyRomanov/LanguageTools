@@ -14,10 +14,10 @@ class DocumentCorpus:
         self.doc_to_sent = dict()
         self.last_doc_id = 0
 
-    def add_docs(self, docs):
+    def add_docs(self, docs, save_instantly=True):
 
         for doc in docs:
-            added = self.corpus.add_docs(self.sentencizer(doc))
+            added = self.corpus.add_docs(self.sentencizer(doc), save_instantly=save_instantly)
 
             for a in added:
                 self.sent_to_doc[a] = self.last_doc_id
