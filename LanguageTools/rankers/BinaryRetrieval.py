@@ -19,7 +19,12 @@ class BinaryRetrieval(SimilarityEngine):
 
     def build_index(self):
         # TODO
-        # include ngrams
+        # 1. include ngrams. alternative to ngrams is to use positional postings. hoewver, ngram based implementation
+        #   is simpler and allows to include misspell tolerant queries
+        # 2. look into zarr
+        # 3. build disk-based index SPIMI see ref in 4.7
+        # 4. compression (chapter 5
+        # 5. Correct orderings for ranked retrievals (chapter 6)
         self.inv_index = dict()
 
         for id_, doc in self.corpus.corpus:
