@@ -6,7 +6,7 @@ from psutil import virtual_memory
 
 from LanguageTools.DocumentCorpus import DocumentCorpus
 from LanguageTools.rankers import SimilarityEngine
-from LanguageTools.file_utils import check_dir_exists, total_size
+from LanguageTools.file_utils import check_dir_exists
 
 
 def dump_shard(path, id, shard_postings):

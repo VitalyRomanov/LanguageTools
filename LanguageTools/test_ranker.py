@@ -46,11 +46,11 @@ corpus = WikiReader("/home/ltv/data/local_run/wikipedia/wiki_ru.joined")
 #%%
 print(os.getcwd())
 #%%
-dc = DocumentCorpus("test_doc_corpus", "ru")
-dc.add_docs(corpus, save_instantly=False)
-dc.save()
-
-# dc = DocumentCorpus.load("test_doc_corpus")
+# dc = DocumentCorpus("test_doc_corpus", "ru")
+# dc.add_docs(corpus, save_instantly=False)
+# dc.save()
+#
+dc = DocumentCorpus.load("test_doc_corpus")
 
 #%%
 retr = BinaryRetrieval(dc)
