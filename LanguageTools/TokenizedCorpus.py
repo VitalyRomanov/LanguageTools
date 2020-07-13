@@ -104,6 +104,9 @@ class TokenizedCorpus:
             self.shard_for_write += 1
             self.written_in_current_shard = 0
 
+    def __len__(self):
+        return len(self.index)
+
     def __getitem__(self, doc_id):
         if isinstance(doc_id, int):
             return Doc(self.wrap_into_token(self.get_with_id(doc_id)))
