@@ -27,7 +27,7 @@ class SimilarityEngine:
 
         # spellchecker should produce several correction candidates (or maybe one)
         # here need to retrieve both queries and rank which query was more likely
-        relevant_docs = self.retrieve(self.retrieve_sub(token_ids)if exact else self.retrieve_sub_rank(token_ids))
+        relevant_docs = self.retrieve(self.retrieve_sub(token_ids) if exact else self.retrieve_sub_rank(token_ids))
         return relevant_docs
 
     def query_expansion(self, tokens):
