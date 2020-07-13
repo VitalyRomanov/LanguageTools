@@ -48,6 +48,7 @@ class DocumentCorpus:
             self.path,
             self.lang,
             self.sent_to_doc,
+            self.doc_to_sent,
             self.last_doc_id
         ), open(os.path.join(self.path, "docindex"), "wb"), protocol=4)
         self.corpus.save()
@@ -57,11 +58,14 @@ class DocumentCorpus:
         path, \
             lang, \
             sent_to_doc, \
+            doc_to_sent, \
             last_doc_id = p.load(open(os.path.join(path, "docindex"), "rb"))
 
         doc_corpus = DocumentCorpus(path, lang)
         doc_corpus.sent_to_doc = sent_to_doc
+        doc_corpus.doc_to_sent = doc_to_sent
         doc_corpus.last_doc_id = last_doc_id
+        doc_corpus.corpus = TokenizedCorpus.load(path)
 
         return doc_corpus
 
