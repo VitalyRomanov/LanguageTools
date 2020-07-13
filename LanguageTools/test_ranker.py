@@ -41,19 +41,22 @@ class WikiReader:
             raise StopIteration()
 
 corpus = WikiReader("/home/ltv/data/local_run/wikipedia/wiki_ru.joined")
+# corpus = WikiReader("/Volumes/External/datasets/Language/Corpus/en/EnWiki/en_wiki_100mb.txt")
 
 #%%
 print(os.getcwd())
 #%%
 dc = DocumentCorpus("test_doc_corpus", "ru")
-
 dc.add_docs(corpus, save_instantly=False)
 dc.save()
+
+# dc = DocumentCorpus.load("test_doc_corpus")
 
 #%%
 retr = BinaryRetrieval(dc)
 retr.save("binary_retr")
 
 #%%
+retr.query("political philosophy", exact=True)
 
-
+#%%
