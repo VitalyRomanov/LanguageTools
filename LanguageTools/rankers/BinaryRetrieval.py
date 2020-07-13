@@ -144,10 +144,10 @@ class BinaryRetrieval(SimilarityEngine):
     @classmethod
     def load(cls, path):
         corpus = DocumentCorpus.load(p.load(open(os.path.join(path, "corpus_ref"), "rb")))
-        index = DocumentCorpus.load(p.load(open(os.path.join(path, "postings_ref"), "rb")))
+        inv_index = PostingIndex.load(p.load(open(os.path.join(path, "postings_ref"), "rb")))
 
         retr = BinaryRetrieval(corpus, index_instantly=False)
-        retr.index = index
+        retr.inv_index = inv_index
         # retr.inv_index = p.load(open(os.path.join(path, "inv_index"), "rb"))
         return retr
 

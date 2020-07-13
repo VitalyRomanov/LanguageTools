@@ -53,10 +53,12 @@ print(os.getcwd())
 dc = DocumentCorpus.load("test_doc_corpus")
 
 #%%
-retr = BinaryRetrieval(dc)
-retr.save("binary_retr")
+# retr = BinaryRetrieval(dc)
+# retr.save("binary_retr")
+retr = BinaryRetrieval.load("binary_retr")
+
 
 #%%
-retr.query("political philosophy", exact=True)
+retr.query("political philosophy", exact=False)
 
 #%%
