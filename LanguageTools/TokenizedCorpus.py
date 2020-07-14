@@ -2,11 +2,13 @@
 from LanguageTools.Vocabulary import Vocabulary
 from LanguageTools.Tokenizer import Tokenizer, Sentencizer
 from LanguageTools.Tokenizer import Token, Doc
+from LanguageTools.utils import CompactStorage
 import pickle as p
 import mmap
 import os, sys
 import json
 import types
+import numpy as np
 
 def isiterable(obj):
     try:
@@ -42,20 +44,26 @@ class TokenizedCorpus:
         self.tok = tokenizer if tokenizer else Tokenizer()
 
         self.file_index = dict() # (shard, filename)
-        self.index = dict() # (shard, position, length)
+        # self.index = dict() # (shard, position, length)
+        self.index = CompactStorage(3, 100000)
+        # self.init_index(100000)
 
         self.opened_shards = dict() # (shard, file, mmap object) if mmap is none -> opened for write
 
+        self.new_doc_id = 0
         self.shard_for_write = 0
         self.written_in_current_shard = 0
         self.shard_size=shard_size
 
         self.path = path
 
+    # def init_index(self, size):
+    #     self.index = np.zeros(shape=(size, 3), dtype=np.uint32)
+    #
+    # def resize_index(self, new_size):
+    #     self.index.resize((new_size, 3))
 
     def add_docs(self, docs, save_instantly=True):
-
-        len_index = len(self.index)
 
         added = [] # bad, high mem allocation
 
@@ -71,7 +79,7 @@ class TokenizedCorpus:
             added.append(self.add_doc(tokenized_doc))
 
         if save_instantly:
-            if len(self.index) != len_index:
+            if len(added):
                 self.save_index()
                 self.save_vocab()
                 self.save_param()
@@ -88,13 +96,20 @@ class TokenizedCorpus:
         # it appears that pickled structured array occupies about three times as much space as list of tuples
         serialized_doc = p.dumps(transformed_doc, protocol=4)
 
-        doc_id = len(self.index)
+        doc_id = self.new_doc_id #len(self.index)
+        self.new_doc_id += 1
+
+        # if doc_id >= self.index.shape[0]:
+        #     self.resize_index(int(self.index.shape[0] * 1.2))
 
         f, _ = self.writing_mode(self.shard_for_write)
 
         position = f.tell()
         written = f.write(serialized_doc)
-        self.index[doc_id] = (self.shard_for_write, position, written)
+        # self.index[doc_id] = (self.shard_for_write, position, written)
+        # self.index[doc_id, :] = np.fromiter((self.shard_for_write, position, written), dtype=np.uint32)
+        assert doc_id == len(self.index)
+        self.index.append((self.shard_for_write, position, written))
         self.increment_doc_count()
         return doc_id
 
@@ -105,7 +120,8 @@ class TokenizedCorpus:
             self.written_in_current_shard = 0
 
     def __len__(self):
-        return len(self.index)
+        # return len(self.index)
+        return self.new_doc_id
 
     def __getitem__(self, doc_id):
         if isinstance(doc_id, int):
@@ -122,11 +138,13 @@ class TokenizedCorpus:
         return self
 
     def __next__(self):
-        if self.iter_doc >= len(self.index):
+        if self.iter_doc < len(self):
+            c_doc_id = self.iter_doc
+            self.iter_doc += 1
+            return c_doc_id, self[c_doc_id]
+        else:
             raise StopIteration()
-        c_doc_id = self.iter_doc
-        self.iter_doc += 1
-        return c_doc_id, self[c_doc_id]
+
 
     def wrap_into_token(self, tokens):
         return (Token(tailspace=t[1], text=self.vocab[t[0]], id=t[0]) for t in tokens)
@@ -178,6 +196,7 @@ class TokenizedCorpus:
 
     def save_param(self):
         p.dump((
+            self.new_doc_id,
             self.freeze_vocab,
             self.file_index,
             self.shard_for_write,
@@ -187,6 +206,7 @@ class TokenizedCorpus:
         ), open(os.path.join(self.path, "params"), "wb"), protocol=4)
 
     def load_param(self):
+        self.new_doc_id, \
         self.freeze_vocab,\
         self.file_index,\
         self.shard_for_write,\

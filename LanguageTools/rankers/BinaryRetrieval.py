@@ -1,12 +1,13 @@
-import os
+import os, sys
 import pickle as p
 from collections import Counter
 import mmap
 from psutil import virtual_memory
+# import numpy as np
 
 from LanguageTools.DocumentCorpus import DocumentCorpus
 from LanguageTools.rankers import SimilarityEngine
-from LanguageTools.file_utils import check_dir_exists
+from LanguageTools.utils import check_dir_exists, CompactStorage
 
 
 def dump_shard(path, id, shard_postings):
@@ -36,7 +37,7 @@ def merge_shards(path, vocab, shards):
         mm = mmap.mmap(f.fileno(), 0)
         shards_.append((shard_index, mm))
 
-    index = PostingIndex(path)
+    index = PostingIndex(path, vocab_size=len(vocab))
 
     for t_id, _, _ in vocab.most_common():
         p_ = set()
@@ -156,10 +157,15 @@ class PostingIndex:
     file_index = None
     index = None
 
-    def __init__(self, path, shard_size=2**30):
+    def __init__(self, path, vocab_size=None, shard_size=2**30):
 
         self.file_index = dict() # (shard, filename)
-        self.index = dict() # (shard, position, length)
+        # self.index = dict() # (shard, position, length)
+        if vocab_size:
+            # self.init_index(vocab_size)
+            self.index = CompactStorage(3, vocab_size)
+            self.index.active_storage_size = vocab_size
+
 
         self.opened_shards = dict() # (shard, file, mmap object) if mmap is none -> opened for write
 
@@ -169,7 +175,29 @@ class PostingIndex:
 
         self.path = path
 
+    # def compact_index(self):
+    #     sorted_keys = list(self.index.keys())
+    #     sorted_keys.sort()
+    #     for ind, el in enumerate(sorted_keys):
+    #         if ind == 0: continue
+    #         assert el - sorted_keys[ind-1] == 1
+    #
+    #     size = len(sorted_keys)
+    #
+    #     compact_index = np.zeros(shape=(size, 3), dtype = np.uint32)
+    #     for key, val in self.index.items():
+    #         compact_index[key, :] = np.fromiter(val, dtype=np.uint32)
+    #
+    #     size_before = sys.getsizeof(self.index) / 1024/ 1024
+    #     size_after = sys.getsizeof(compact_index) / 1024/ 1024
+    #     print(f"Before {size_before}MB, after {size_after}MB")
+
+    # def init_index(self, size):
+    #     self.index = np.zeros(shape=(size, 3), dtype=np.uint32)
+
     def add_posting(self, term_id, postings):
+        if self.index is None:
+            raise Exception("Index is not initialized")
 
         serialized_doc = p.dumps(postings, protocol=4)
 
@@ -177,7 +205,9 @@ class PostingIndex:
 
         position = f.tell()
         written = f.write(serialized_doc)
+        # self.index[term_id] = (self.shard_for_write, position, written)
         self.index[term_id] = (self.shard_for_write, position, written)
+        # self.index[term_id, :] = np.fromiter((self.shard_for_write, position, written), dtype=np.uint32)
         self.increment_byte_count(written)
         return term_id
 

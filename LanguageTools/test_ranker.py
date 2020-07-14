@@ -40,8 +40,8 @@ class WikiReader:
         except:
             raise StopIteration()
 
-corpus = WikiReader("/home/ltv/data/local_run/wikipedia/wiki_ru.joined")
-# corpus = WikiReader("/Volumes/External/datasets/Language/Corpus/en/EnWiki/en_wiki_100mb.txt")
+# corpus = WikiReader("/home/ltv/data/local_run/wikipedia/wiki_ru.joined")
+corpus = WikiReader("/Volumes/External/datasets/Language/Corpus/en/EnWiki/en_wiki_100mb.txt")
 
 #%%
 print(os.getcwd())
@@ -51,8 +51,8 @@ print(os.getcwd())
 # dc.save()
 #
 dc = DocumentCorpus.load("test_doc_corpus")
-
-#%%
+#
+# %%
 # retr = BinaryRetrieval(dc)
 # retr.save("binary_retr")
 retr = BinaryRetrieval.load("binary_retr")
