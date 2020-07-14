@@ -301,6 +301,7 @@ class PostingIndex:
     def save(self):
         self.save_index()
         self.save_param()
+        self.close_all_shards()
 
     @classmethod
     def load(cls, path):
@@ -312,6 +313,6 @@ class PostingIndex:
 
     def close_all_shards(self):
         for shard in self.opened_shards.values():
-            for s in shard:
+            for s in shard[::-1]:
                 if s:
                     s.close()

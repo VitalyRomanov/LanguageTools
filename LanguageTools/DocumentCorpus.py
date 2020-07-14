@@ -9,7 +9,8 @@ class DocumentCorpus:
     def __init__(self, path, lang):
         self.path = path
         self.corpus = TokenizedCorpus(path)
-        self.sentencizer = Sentencizer(lang)
+
+        self.sentencizer = None
         self.lang = lang
 
         # self.sent_to_doc = dict()
@@ -34,6 +35,9 @@ class DocumentCorpus:
     #     self.doc_to_sent.resize((new_size, 2))
 
     def add_docs(self, docs, save_instantly=True):
+
+        if self.sentencizer is None:
+            self.sentencizer = Sentencizer(self.lang)
 
         for doc in docs:
             added = self.corpus.add_docs(self.sentencizer(doc), save_instantly=save_instantly)
@@ -84,6 +88,7 @@ class DocumentCorpus:
             self.last_doc_id
         ), open(os.path.join(self.path, "docindex"), "wb"), protocol=4)
         self.corpus.save()
+        self.sentencizer = None
 
     @classmethod
     def load(cls, path):

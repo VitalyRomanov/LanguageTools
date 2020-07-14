@@ -28,6 +28,8 @@ def into_string(tokens):
 
 class TokenizedCorpus:
     vocab = None
+    tok = None
+    persist_tokenizer = False
     file_index = None
     index = None
 
@@ -41,7 +43,9 @@ class TokenizedCorpus:
         else:
             self.vocab = vocab
 
-        self.tok = tokenizer if tokenizer else Tokenizer()
+        if tokenizer:
+            self.tok = tokenizer
+            self.persist_tokenizer = True
 
         self.file_index = dict() # (shard, filename)
         # self.index = dict() # (shard, position, length)
@@ -64,6 +68,9 @@ class TokenizedCorpus:
     #     self.index.resize((new_size, 3))
 
     def add_docs(self, docs, save_instantly=True):
+
+        if self.tok is None:
+            self.tok = Tokenizer()
 
         added = [] # bad, high mem allocation
 
@@ -195,7 +202,12 @@ class TokenizedCorpus:
         return self.opened_shards[id_]
 
     def save_param(self):
+        if not self.persist_tokenizer:
+            self.tok = None
+
         p.dump((
+            self.tok,
+            self.persist_tokenizer,
             self.new_doc_id,
             self.freeze_vocab,
             self.file_index,
@@ -206,6 +218,8 @@ class TokenizedCorpus:
         ), open(os.path.join(self.path, "params"), "wb"), protocol=4)
 
     def load_param(self):
+        self.tok, \
+        self.persist_tokenizer, \
         self.new_doc_id, \
         self.freeze_vocab,\
         self.file_index,\
@@ -230,6 +244,7 @@ class TokenizedCorpus:
         self.save_index()
         self.save_vocab()
         self.save_param()
+        self.close_all_shards()
 
     @classmethod
     def load(cls, path):
@@ -241,8 +256,8 @@ class TokenizedCorpus:
 
 
     def close_all_shards(self):
-        for shard in self.opened_shards.values():
-            for s in shard:
+        for shard in self.opened_shards.values(): # (file, memmap or None)
+            for s in shard[::-1]: # reverse, so that memmap is closed first, do not know if this is necessary
                 if s:
                     s.close()
 
