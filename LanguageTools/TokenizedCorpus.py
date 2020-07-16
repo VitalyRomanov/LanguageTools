@@ -67,6 +67,12 @@ class TokenizedCorpus:
     # def resize_index(self, new_size):
     #     self.index.resize((new_size, 3))
 
+    @property
+    def tokenizer(self):
+        if self.tok is None:
+            self.tok = Tokenizer()
+        return self.tok
+
     def add_docs(self, docs, save_instantly=True):
 
         if self.tok is None:

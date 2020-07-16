@@ -1,5 +1,6 @@
 from collections.abc import Iterable
 from LanguageTools.DocumentCorpus import DocumentCorpus
+from LanguageTools.Tokenizer import Tokenizer
 from collections import Counter
 
 
@@ -13,7 +14,7 @@ class SimilarityEngine:
 
     def query(self, q, exact=False, do_expansion=False, spellcheck=False):
         if isinstance(q, str):
-            token_ids = [(self.corpus.corpus.vocab[t.text], self.corpus.importance(t.text)) for t in self.corpus.corpus.tok.token_gen(q)]
+            token_ids = [(self.corpus.corpus.vocab[t.text], self.corpus.importance(t.text)) for t in self.corpus.corpus.tokenizer.token_gen(q)]
         if isinstance(q, Iterable): # may be this is not what i think
             pass
         else:
