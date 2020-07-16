@@ -5,6 +5,8 @@ import numpy as np
 import pickle as p
 from time import time
 # import mmh3
+import shelve, os, sys
+from pygtrie import StringTrie
 
 class Vocabulary:
 
@@ -43,7 +45,6 @@ class Vocabulary:
         if not self.prob_valid:
             self.calculate_prob()
         return self.word_count_sum
-
 
     def tokens2ids(self, tokens):
         return [self.ids.get(token, 0) for token in tokens]
@@ -120,14 +121,67 @@ class Vocabulary:
         return p.load(open(location, "rb"))
 
 
+# class PersistentVocabulary(Vocabulary):
+#     def __init__(self, path, writeback=False):
+#         self.path = path
+#
+#         self.count = Counter()
+#         self.ids = StringTrie()# shelve.open(os.path.join(self.path, "vocab_ids"), protocol=4, writeback=writeback)
+#         self.inv_ids = dict() #shelve.open(os.path.join(self.path, "vocab_inv_ids"), protocol=4, writeback=writeback)
+#
+#         self.prob_valid = False
+#
+#         self.add(['UNK'])
+#
+#     # def add_token(self, token):
+#     #     if token in self.ids:
+#     #         self.count[self.ids[token]] += 1
+#     #     else:
+#     #         new_id = len(self.ids)
+#     #         self.ids[token] = new_id
+#     #         self.inv_ids[str(new_id)] = token
+#     #         self.count[new_id] = 1
+#     #
+#     # def __getitem__(self, item):
+#     #     if type(item) == str:
+#     #         return self.ids[item]
+#     #     elif type(item) == int:
+#     #         return self.inv_ids[str(item)]
+#     #     else:
+#     #         raise KeyError("")
+#
+#     # def save(self, *args):
+#     #     self.ids.sync()
+#     #     self.inv_ids.sync()
+#     #
+#     #     p.dump((
+#     #         self.count, self.prob_valid
+#     #     ), open(os.path.join(self.path, "vocab_params"), "wb"))
+#     #
+#     # def load(self, path):
+#     #     voc = PersistentVocabulary(path)
+#     #     self.count, self.prob_valid = p.load(open(os.path.join(path, "vocab_params"), "rb"))
+#
+#     def __del__(self):
+#         self.ids.close()
+#         self.inv_ids.close()
+
+
+
+
 if __name__ == "__main__":
+    import time
+    st = time.time()
+    print("Hello")
     voc = Vocabulary()
+    # voc = PersistentVocabulary(sys.argv[2], writeback=True)
 
     import sys
     test_text = sys.argv[1]
     output_location = sys.argv[2]
     voc.add(open(test_text, "r", encoding="utf8").read().split())
     voc.save(output_location)
+    print(time.time()-st)
     # voc.save("test_save")
     # for token_id, token, freq in voc.most_common():
     #     print("%d\ttoken_id, token, freq)
