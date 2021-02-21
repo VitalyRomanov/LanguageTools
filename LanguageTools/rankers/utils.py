@@ -9,6 +9,7 @@ def check_dir_exists(path):
     if not os.path.isdir(path):
         os.mkdir(path)
 
+
 class CompactStorage:
     def __init__(self, n_fields=1, init_size=100000, dtype=np.uint32, volatile_access=False):
         if n_fields == 0:
