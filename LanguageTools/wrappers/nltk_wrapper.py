@@ -1,59 +1,31 @@
-from nltk.tokenize import word_tokenize
-from nltk.data import load
-from nltk.tag import _get_tagger, _pos_tag
+from abc import ABC, abstractmethod
+from typing import Tuple, List
 
 from nltk import RegexpParser
-from nltk.chunk import tree2conlltags
+from nltk import Tree
+from nltk.data import load
+from nltk.tag import _get_tagger, _pos_tag
+from nltk.tokenize import word_tokenize
 
-from copy import copy
-
-# from PatternDetector import en_keywords, ru_keywords
-
-never_part_of_NP = set(["which", "thing", "many", "several", "few", "multiple", "all", "“", "”", "alike", "’", "–", "—", "overall", "this", "‘"])
-key_tokens = set(["'s", "of", "in", "with", "for", "on", "over", "throughout"]) 
-# key_tokens.update(en_keywords)
-# key_tokens.update(ru_keywords)
-key_tokens.update(never_part_of_NP)
+from LanguageTools.wrappers.grammars import EnNpGrammar, RuNpGrammar
 
 
-en_grammar = r"""
-        # NP:
-        #     {<DET>?<NOUN|ADJ><NOUN|ADJ|'s|of|in|with|for|on|over|throughout>*<NOUN>}
-        NP:
-            {<DET>?<NOUN|ADJ|'s>*<NOUN>}
-        NP_of:
-            {<NP><of><NP>}
-        NP_in:
-            {<NP><in><NP>}
-        NP_with:
-            {<NP><with><NP>}
-        NP_for:
-            {<NP><for><NP>}
-        NP_on:
-        # maybe this rule should only work in subconcepts
-            {<NP><on><NP>}
-        NP_over:
-            {<NP><over><NP>}
-        NP_throughout:
-            {<NP><throughout><NP>}
-        """
-        # TODO:
-        # 1. add 's detection DONE
-        # 2. handle a variant ’s DONE
-        # 3. names do not seem to parse
-        # 4. and NP does not process 100% of the time
-        # 5. NP of NP
-        # 6. Such thing, or no such thing are two antipatterns
-        # 7. Incorporate numerals
-        #       In addition to relatively young projects, a number of major exchanges have made their choice in favor of Malta, including Binance, OKEx, ZB.com, as well as such famous blockchain projects as TRON, Big One, Cubits, Bitpay and others.
-        # 8. Antipatterns
-        #       rid of NP
+class NpEnExceptions:
+    help_avoiding_NP = {'Dr', 'dr', 'kind', 'of', 'etc'}
+    exceptions_ = {"which", "thing", "many", "several", "few", "multiple", "all", "“", "”", "alike", "’", "–", "—",
+                  "overall", "this", "‘"}
+    keywords = help_avoiding_NP | exceptions_
 
 
-ru_grammar = r"""
-        NP:
-            {<NOUN|ADJ>*<NOUN.*>}
-        """
+class NpRuExceptions:
+    help_avoiding_NP = {'на', 'качестве', 'том', 'числе', 'под', 'руководством', 'т.', 'д.', 'п.'}
+    exceptions_ = {"различные", "различных", "различным", "различными"}
+    keywords = help_avoiding_NP | exceptions_
+
+
+class NpExceptions:
+    key_tokens = NpEnExceptions.keywords | NpEnExceptions.keywords
+
 
 def process_apostrof_s(tokens):
     # tokens = copy(tokens)
@@ -74,29 +46,120 @@ def process_apostrof_s(tokens):
     return tokens
 
 
+class Sentencizer:
+    def __init__(self, lang):
+        lang = lang.lower()
+        if lang in {'rus', "ru", "russian", ''}:
+            language = 'russian'
+        elif lang in {'eng', 'en', 'english'}:
+            language = 'english'
+        else:
+            raise NotImplementedError(f"Language is not supported: {lang}")
+
+        self._tokenizer = load("tokenizers/punkt/{0}.pickle".format(language))
+
+    def __call__(self, text):
+        return self._tokenizer.tokenize(text)
+
+
+class PosTagger:
+    def __init__(self, lang):
+        lang = lang.lower()
+        if lang in {'rus', "ru", "russian", ''}:
+            language = 'rus'
+        elif lang in {'eng', 'en', 'english'}:
+            language = 'eng'
+        else:
+            raise NotImplementedError(f"Language is not supported: {lang}")
+        self._tagger_lang = language
+        self._tagger = _get_tagger(language)
+
+    def __call__(self, tokens, tagset='universal'):
+        return _pos_tag(tokens, tagset, self._tagger, self._tagger_lang)
+
+
+class GrammarParser(ABC):
+    def __init__(self, lang):
+        lang = lang.lower()
+        if lang in {'rus', "ru", "russian", ''}:
+            language = 'ru'
+        elif lang in {'eng', 'en', 'english'}:
+            language = 'en'
+        else:
+            raise NotImplementedError(f"Language is not supported: {lang}")
+
+        self._grammar_parser = RegexpParser(self._get_grammar(language))
+
+    @abstractmethod
+    def _get_grammar(self, lang):
+        pass
+
+    def _set_exception_set(self):
+        pass
+
+    def _recover_tags(self, tree, mapping):
+        for pos in range(len(tree)):
+            position = tree[pos]
+            if isinstance(position, Tree):
+                self._recover_tags(position, mapping)
+            else:
+                tree[pos] = (position[0], mapping.get(position[0], position[1]))
+
+        return tree
+
+    def __call__(self, tagged_tokens: List[Tuple[str, str]]):
+        replacements = {}
+
+        for ind, tag in enumerate(tagged_tokens):
+            if tag[0].lower() in NpExceptions.key_tokens:
+                replacements[tagged_tokens[ind][0]] = tagged_tokens[ind][1]
+                tagged_tokens[ind] = (tagged_tokens[ind][0], tagged_tokens[ind][0].lower())
+        return self._recover_tags(self._grammar_parser.parse(tagged_tokens), replacements)
+
+
+class NpParser(GrammarParser):
+    def __init__(self, lang):
+        super(NpParser, self).__init__(lang)
+
+    def _get_grammar(self, lang):
+        if lang == "en":
+            return EnNpGrammar.grammar
+        elif lang == "ru":
+            return RuNpGrammar.grammar
+        else:
+            raise NotImplementedError(f"Language is not supported: {lang}")
+
+    def _set_exception_set(self):
+        self.exceptions = NpExceptions.key_tokens
+
+
 class NltkWrapper:
     def __init__(self, language):
         self.lang_code = language
         self.lang_name = 'english' if language=='en' else 'russian'
         self.tagger_lang = 'eng' if language=='en' else 'rus'
 
-        self.sent_tokenizer = load('tokenizers/punkt/{0}.pickle'.format(self.lang_name))
-        self.tagger = _get_tagger(self.tagger_lang)
+        self.sent_tokenizer = Sentencizer(self.lang_name)
+        self.tagger = PosTagger(self.tagger_lang)
 
-        self.grammar_parser = RegexpParser(en_grammar if language=="en" else ru_grammar)
+        self.grammar_parser = NpParser(self.lang_name)
 
     def sentencize(self, text):
-        return self.sent_tokenizer.tokenize(text)
+        return self.sent_tokenizer(text)
+
+    def preprocess(self, text):
+        return text
 
     def tokenize(self, sentence):
+        sentence = self.preprocess(sentence)
         tokens = word_tokenize(text=sentence, language=self.lang_name, preserve_line=True)
 
         tokens = process_apostrof_s(tokens)
 
         return tokens 
 
-    def tag(self, tokens, tagset='universal', lang=None):
-        return _pos_tag(tokens, tagset, self.tagger, self.tagger_lang)
+    def tag(self, tokens, tagset='universal'):
+        return self.tagger(tokens, tagset=tagset)
 
     def __call__(self, text, tagger=True):
         sents = self.sentencize(text)
@@ -105,34 +168,17 @@ class NltkWrapper:
             tags = [self.tag(t_sent) for t_sent in t_sents]
         else:
             tags = t_sents
-        # from nltk import pos_tag
-
-        # tags = [pos_tag(sent, tagset='universal') for sent in sents]
         return tags
 
-    def noun_chunks(self, tags):
-        # t_sent = self.tokenize(sentence_text)
-        # tags = self.tag(t_sent)
-        for ind, tag in enumerate(tags):
-            if tag[0].lower() in key_tokens:
-                tags[ind] = (tags[ind][0], tags[ind][0].lower())
-        # return [(token, pos, tag) for token, pos, tag in tree2conlltags(self.grammar_parser.parse(tags))]
-        return self.grammar_parser.parse(tags)
-        # return [[(token, tag) for token, pos, tag in tree2conlltags(self.grammar_parser.parse(tagged_tokens))] for tagged_tokens in tagged_sents]
-        # return [tree2conlltags(self.grammar_parser.parse(tagged_tokens)) for tagged_tokens in tagged_sents]
-        
+    def parse_grammar(self, tokens):
+        return self.grammar_parser(tokens)
+
     def chunks(self, tags):
-        for ind, tag in enumerate(tags):
-            if tag[0].lower() in key_tokens:
-                tags[ind] = (tags[ind][0], tags[ind][0].lower())
-        parsed = self.grammar_parser.parse(tags)
+        parsed = self.parse_grammar(tags)
         return ["_".join([token for token, pos in s.leaves()]) for s in parsed.subtrees() if "NP" in s.label()]
 
 
-
-
 if __name__=="__main__":
-    from pprint import pprint
     nlp_en = NltkWrapper("en")
     text_en = "Alice`s Adventures in Wonderland (commonly shortened to Alice in Wonderland) is an 1865 novel written by English author Charles Lutwidge Dodgson under the pseudonym Lewis Carroll.[1] It tells of a young girl named Alice falling through a rabbit hole into a fantasy world populated by peculiar, anthropomorphic creatures."
     # text_en = "The kind of societal change Dr Ammous predicts in his book, and spoke about with their reporter, severely threatens a status quo, which such mainstream publications such as The Express is usually keen to uphold."
@@ -142,14 +188,14 @@ if __name__=="__main__":
     text_en = "The research will also include the Engineering, the Law School, School of Information, and other colleges or programs."
     # text_en = "Once launched, Huobi Chain will offer users a variety of benefits, including security, transparency, fast, scalability, and smart contract capability."
     tags_en = nlp_en(text_en)
-    tags_en = nlp_en.noun_chunks(text_en)
-    # tags_en.pprint()
+    for sent in tags_en:
+        tags_en = nlp_en.chunks(sent)
+        tags_en.pprint()
 
     seen = []
 
     # print(tags_en.treepositions())
 
-    from nltk import Tree
     for child in tags_en:
         if isinstance(child, Tree):
             if len(child.label()) > 3 and child.label()[:3] == "NP_":
