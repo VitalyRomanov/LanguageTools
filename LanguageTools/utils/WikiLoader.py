@@ -15,7 +15,7 @@ class WikiDataLoader:
         # Prepare the list of subfolders in extracted wiki dump
         self.set_folders()
 
-        len(self)
+        # len(self)
 
     def set_folders(self):
         self.folders = list(filter(lambda x: os.path.isdir(os.path.join(self.path, x)), os.listdir(self.path)))
@@ -70,13 +70,13 @@ class WikiDataLoader:
         else:
             raise StopIteration()
 
-    def __len__(self):
-        if not hasattr(self, "length"):
-            n = 0
-            for _ in self:
-                n += 1
-            self.length = n
-        return self.length
+    # def __len__(self):
+    #     if not hasattr(self, "length"):
+    #         n = 0
+    #         for _ in self:
+    #             n += 1
+    #         self.length = n
+    #     return self.length
 
 
 if __name__ == "__main__":
