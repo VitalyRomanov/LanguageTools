@@ -89,13 +89,14 @@ class GrammarParser(ABC):
             raise NotImplementedError(f"Language is not supported: {lang}")
 
         self._grammar_parser = RegexpParser(self._get_grammar(language))
+        self._set_exception_set()
 
     @abstractmethod
     def _get_grammar(self, lang):
-        pass
+        return None
 
     def _set_exception_set(self):
-        pass
+        self._exceptions = None
 
     def _recover_tags(self, tree, mapping):
         for pos in range(len(tree)):
@@ -103,7 +104,7 @@ class GrammarParser(ABC):
             if isinstance(position, Tree):
                 self._recover_tags(position, mapping)
             else:
-                tree[pos] = (position[0], mapping.get(position[0], position[1]))
+                tree[pos] = (position[0], mapping.get(position[1], position[1]))
 
         return tree
 
@@ -111,9 +112,10 @@ class GrammarParser(ABC):
         replacements = {}
 
         for ind, tag in enumerate(tagged_tokens):
-            if tag[0].lower() in NpExceptions.key_tokens:
-                replacements[tagged_tokens[ind][0]] = tagged_tokens[ind][1]
-                tagged_tokens[ind] = (tagged_tokens[ind][0], tagged_tokens[ind][0].lower())
+            if tag[0].lower() in self._exceptions:
+                r = tagged_tokens[ind][1].lower() + "_" + tagged_tokens[ind][0].lower()
+                replacements[r] = tagged_tokens[ind][1]
+                tagged_tokens[ind] = (tagged_tokens[ind][0], r)
         return self._recover_tags(self._grammar_parser.parse(tagged_tokens), replacements)
 
 
@@ -130,7 +132,7 @@ class NpParser(GrammarParser):
             raise NotImplementedError(f"Language is not supported: {lang}")
 
     def _set_exception_set(self):
-        self.exceptions = NpExceptions.key_tokens
+        self._exceptions = NpExceptions.key_tokens
 
 
 class NltkWrapper:
@@ -139,10 +141,18 @@ class NltkWrapper:
         self.lang_name = 'english' if language=='en' else 'russian'
         self.tagger_lang = 'eng' if language=='en' else 'rus'
 
-        self.sent_tokenizer = Sentencizer(self.lang_name)
-        self.tagger = PosTagger(self.tagger_lang)
+        self.set_tokenizer(self.lang_name)
+        self.set_tagger(self.tagger_lang)
+        self.set_grammar_parser(self.lang_name)
 
-        self.grammar_parser = NpParser(self.lang_name)
+    def set_tokenizer(self, lang):
+        self.sent_tokenizer = Sentencizer(lang)
+
+    def set_tagger(self, lang):
+        self.tagger = PosTagger(lang)
+
+    def set_grammar_parser(self, lang):
+        self.grammar_parser = NpParser(lang)
 
     def sentencize(self, text):
         return self.sent_tokenizer(text)
