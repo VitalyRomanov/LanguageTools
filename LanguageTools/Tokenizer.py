@@ -1,7 +1,7 @@
 import re
 from gensim.utils import deaccent
 from types import GeneratorType
-
+from LanguageTools.wrappers.nltk_wrapper import Sentencizer
 
 class Token:
     def __init__(self, text, tailspace, id=None, **kwargs):
