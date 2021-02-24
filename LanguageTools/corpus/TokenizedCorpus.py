@@ -1,8 +1,11 @@
 # from gensim.corpora import MmCorpus # does not preserve the order
+import logging
+
 from LanguageTools.Vocabulary import Vocabulary
 from LanguageTools.Tokenizer import Tokenizer, Sentencizer
 from LanguageTools.Tokenizer import Token, Doc
-from LanguageTools.utils import CompactStorage
+import shelve
+from Closet import DbDict
 import pickle as p
 import mmap
 import os, sys
@@ -34,8 +37,12 @@ class TokenizedCorpus:
     index = None
 
     def __init__(self, path, vocab=None, tokenizer=None, shard_size=2000000, freeze_vocab=False):
+        self.path = path
 
         self.freeze_vocab = freeze_vocab
+
+        if not os.path.isdir(path):
+            os.mkdir(path)
 
         if not vocab:
             self.vocab = Vocabulary()
@@ -49,17 +56,20 @@ class TokenizedCorpus:
 
         self.file_index = dict() # (shard, filename)
         # self.index = dict() # (shard, position, length)
-        self.index = CompactStorage(3, 100000)
+        # self.index = CompactStorage(3, 100000)
+        # self.index = shelve.open(os.path.join(path, "index.db"))
+        self.index = DbDict(os.path.join(path, "index.db"), keytype=int)
         # self.init_index(100000)
 
         self.opened_shards = dict() # (shard, file, mmap object) if mmap is none -> opened for write
 
-        self.new_doc_id = 0
+        self.new_doc_id = len(self.index)
         self.shard_for_write = 0
         self.written_in_current_shard = 0
         self.shard_size=shard_size
 
-        self.path = path
+        self.save_instantly_warn = True
+
 
     # def init_index(self, size):
     #     self.index = np.zeros(shape=(size, 3), dtype=np.uint32)
@@ -74,6 +84,9 @@ class TokenizedCorpus:
         return self.tok
 
     def add_docs(self, docs, save_instantly=True):
+
+        if self.save_instantly_warn and save_instantly:
+            logging.warning("Set `save_instantly` to False for performance")
 
         if self.tok is None:
             self.tok = Tokenizer()
@@ -121,8 +134,9 @@ class TokenizedCorpus:
         written = f.write(serialized_doc)
         # self.index[doc_id] = (self.shard_for_write, position, written)
         # self.index[doc_id, :] = np.fromiter((self.shard_for_write, position, written), dtype=np.uint32)
-        assert doc_id == len(self.index)
-        self.index.append((self.shard_for_write, position, written))
+        # assert doc_id == len(self.index)
+        self.index[str(doc_id)] = (self.shard_for_write, position, written)
+        # self.index.append((self.shard_for_write, position, written))
         self.increment_doc_count()
         return doc_id
 
@@ -163,7 +177,7 @@ class TokenizedCorpus:
         return (Token(tailspace=t[1], text=self.vocab[t[0]], id=t[0]) for t in tokens)
 
     def get_with_id(self, doc_id):
-        shard, pos, len_ = self.index[doc_id]
+        shard, pos, len_ = self.index[str(doc_id)]
         _, mm = self.reading_mode(shard)
         return p.loads(mm[pos: pos+len_])
 
@@ -241,10 +255,12 @@ class TokenizedCorpus:
         self.vocab = Vocabulary.load(os.path.join(self.path, "vocab"))
 
     def save_index(self):
-        p.dump(self.index, open(os.path.join(self.path, "index"), "wb"), protocol=4)
+        self.index.commit()
+        # p.dump(self.index, open(os.path.join(self.path, "index"), "wb"), protocol=4)
 
     def load_index(self):
-        self.index = p.load(open(os.path.join(self.path, "index"), "rb"))
+        pass
+        # self.index = p.load(open(os.path.join(self.path, "index"), "rb"))
 
     def save(self):
         self.save_index()
@@ -266,6 +282,10 @@ class TokenizedCorpus:
             for s in shard[::-1]: # reverse, so that memmap is closed first, do not know if this is necessary
                 if s:
                     s.close()
+
+    def __del__(self):
+        self.index.commit()
+        self.index.close()
 
 
 
