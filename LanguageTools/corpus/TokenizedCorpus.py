@@ -1,8 +1,8 @@
 # from gensim.corpora import MmCorpus # does not preserve the order
 import logging
 
-from LanguageTools.Vocabulary import Vocabulary
-from LanguageTools.Tokenizer import Tokenizer, Sentencizer
+from LanguageTools.Vocabulary import Vocabulary, SqliteVocabulary
+from LanguageTools.Tokenizer import Tokenizer, Sentencizer, BpeTokenizer
 from LanguageTools.Tokenizer import Token, Doc
 import shelve
 from Closet import DbDict
@@ -45,7 +45,8 @@ class TokenizedCorpus:
             os.mkdir(path)
 
         if not vocab:
-            self.vocab = Vocabulary()
+            # self.vocab = Vocabulary()
+            self.vocab = SqliteVocabulary(os.path.join(path, "voc.db"))
             self.freeze_vocab = False
         else:
             self.vocab = vocab
@@ -87,6 +88,7 @@ class TokenizedCorpus:
 
         if self.save_instantly_warn and save_instantly:
             logging.warning("Set `save_instantly` to False for performance")
+            self.save_instantly_warn = False
 
         if self.tok is None:
             self.tok = Tokenizer()
@@ -252,7 +254,8 @@ class TokenizedCorpus:
         self.vocab.save(os.path.join(self.path, "vocab"))
 
     def load_vocab(self):
-        self.vocab = Vocabulary.load(os.path.join(self.path, "vocab"))
+        # self.vocab = Vocabulary.load(os.path.join(self.path, "vocab"))
+        pass
 
     def save_index(self):
         self.index.commit()
@@ -299,7 +302,7 @@ Other common names are ear shells, sea ears, and muttonfish or muttonshells in A
 S.W.A.T. M. D.
 """
     sentencizer_en = Sentencizer("en")
-    tokenizer = Tokenizer()
+    # tokenizer = Tokenizer()
 
     sents = sentencizer_en(text_en)
 
