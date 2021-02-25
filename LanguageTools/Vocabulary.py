@@ -211,6 +211,7 @@ class SimpleCache:
 
 class SqliteVocabulary(Vocabulary):
     def __init__(self, path, cache_size=2000000):
+        # super(SqliteVocabulary, self).__init__()
 
         self.path = path
 
@@ -295,9 +296,8 @@ class SqliteVocabulary(Vocabulary):
         return self.get_value(id_)[1]
 
     def build_inv_index(self):
-        self.cur.execute("CREATE INDEX id_index ON vocabulary(id)")
+        self.cur.execute("CREATE INDEX IF NOT EXISTS id_index ON vocabulary(id)")
         self.commit()
-
 
     def __setitem__(self, key, value):
         try:
@@ -310,7 +310,7 @@ class SqliteVocabulary(Vocabulary):
         self.db.commit()
         self.requires_commit = False
 
-    def save(self, destination):
+    def save(self, *args):
         self.write_from_cache()
         self.commit()
 
@@ -324,7 +324,7 @@ if __name__ == "__main__":
     import time
     st = time.time()
     print("Hello")
-    voc = Vocabulary()
+    # voc = Vocabulary()
     # voc = PersistentVocabulary(sys.argv[2], writeback=True)
     voc = SqliteVocabulary("d.db")
 
