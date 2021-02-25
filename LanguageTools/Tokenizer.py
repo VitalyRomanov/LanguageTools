@@ -88,6 +88,45 @@ class Tokenizer:
         yield Token(text=last_token, tailspace=False)
 
 
+def create_subword_tokenizer(lang, vs):
+    from pathlib import Path
+    from bpemb.util import sentencepiece_load, http_get
+    import re
+
+    def _load_file(file, archive=False):
+        cache_dir = Path.home() / Path(".cache/bpemb")
+        archive_suffix = ".tar.gz"
+        base_url = "https://nlp.h-its.org/bpemb/"
+        cached_file = Path(cache_dir) / file
+        if cached_file.exists():
+            return cached_file
+        suffix = archive_suffix if archive else ""
+        file_url = base_url + file + suffix
+        print("downloading", file_url)
+        return http_get(file_url, cached_file, ignore_tardir=True)
+    model_file = "{lang}/{lang}.wiki.bpe.vs{vs}.model".format(lang=lang, vs=vs)
+    model_file = _load_file(model_file)
+    spm = sentencepiece_load(model_file)
+    return spm
+    # return lambda text: spm.EncodeAsPieces(re.sub(r"\d", "0", text.lower()))
+
+
+class BpeTokenizer(Tokenizer):
+    def __init__(self):
+        super(BpeTokenizer, self).__init__()
+
+        self.bpe_tokenizer = create_subword_tokenizer("multi", 1000000)
+
+    def token_gen(self, lines_str, lower = False, remove_accents=True):
+        lines = deaccent(lines_str.strip()) if remove_accents else lines_str
+        lines = lines.lower() if lower else lines
+
+        tokens = self.bpe_tokenizer.EncodeAsPieces(re.sub(r"\d", "0", lines))
+
+        for token in tokens:
+            yield Token(text=token, tailspace=False)
+
+
 if __name__ == "__main__":
     text_en = """<doc id="1300" url="https://en.wikipedia.org/wiki?curid=1300" title="Abalone">
 Abalone
