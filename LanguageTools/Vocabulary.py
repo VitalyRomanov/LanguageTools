@@ -314,6 +314,17 @@ class SqliteVocabulary(Vocabulary):
         self.write_from_cache()
         self.commit()
 
+    def most_common(self, length=None):
+        if length is None:
+            length = len(self)
+        self.write_from_cache()
+        return [(id, word, count) for id, word, count in self.cur.execute(f"SELECT id, word, count FROM [vocabulary] LIMIT {length}").fetchall()]
+        # return [(token_id, self.inv_ids[token_id], freq) for token_id, freq in self.count.most_common(length)]
+
+    def __len__(self):
+        self.write_from_cache()
+        return self.cur.execute("SELECT COUNT() FROM [vocabulary]").fetchone()[0]
+
     def __del__(self):
         self.cur.close()
         self.db.close()
@@ -340,5 +351,5 @@ if __name__ == "__main__":
 
     # print("\n\n")
     # voc1 = Vocabulary.load("test_save")
-    # for token_id, token, freq in voc.most_common():
-    #     print(token_id, token, freq)
+    for token_id, token, freq in voc.most_common():
+        print(token_id, token, freq)
