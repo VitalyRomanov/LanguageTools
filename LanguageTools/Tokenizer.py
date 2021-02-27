@@ -111,6 +111,7 @@ def create_subword_tokenizer(lang, vs):
     # return lambda text: spm.EncodeAsPieces(re.sub(r"\d", "0", text.lower()))
 
 
+# tried to use BPE tokenizer for better compression, but the resulting corpus occupies even more space
 class BpeTokenizer(Tokenizer):
     def __init__(self):
         super(BpeTokenizer, self).__init__()
