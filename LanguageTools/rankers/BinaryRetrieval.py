@@ -5,7 +5,6 @@ from collections import Counter
 
 from Closet import KVStore
 from psutil import virtual_memory
-# import numpy as np
 from tqdm import tqdm
 
 from LanguageTools.corpus.DocumentCorpus import DocumentCorpus
@@ -114,9 +113,6 @@ class BinaryRetrieval(SimilarityEngine):
                     shard_postings = dict()
                     shard_id += 1
 
-            # print(f"\rIndexing {doc_ind}/{len(self.corpus.corpus)}", end="")
-        # print(" " * 50, end="\r")
-
         if len(shard_postings) > 0:
             shards.append(dump_shard(self.corpus.path, shard_id, shard_postings))
 
@@ -149,190 +145,14 @@ class BinaryRetrieval(SimilarityEngine):
         if self.inv_index is not None:
             self.inv_index.save()
 
-        # p.dump(self.inv_index, open(os.path.join(path, "inv_index"), "wb"))
-        # p.dump(self.corpus.path, open(os.path.join(self.path, "corpus_ref"), "wb"))
-        # p.dump(self.inv_index.path, open(os.path.join(self.path, "postings_ref"), "wb"))
-
     @classmethod
     def load(cls, path):
         corpus = DocumentCorpus.load(p.load(open(path, "rb")))
         inv_index = PostingIndex.load(p.load(open(BinaryRetrieval.posting_path(path), "rb")))
-        # corpus = DocumentCorpus.load(p.load(open(os.path.join(path, "corpus_ref"), "rb")))
-        # inv_index = PostingIndex.load(p.load(open(os.path.join(path, "postings_ref"), "rb")))
 
         retr = BinaryRetrieval(corpus, index_instantly=False)
         retr.inv_index = inv_index
-        # retr.inv_index = p.load(open(os.path.join(path, "inv_index"), "rb"))
         return retr
-
-
-# class PostingIndex:
-#     file_index = None
-#     index = None
-#
-#     def __init__(self, path, vocab_size=None, shard_size=2**30):
-#         self.path = path
-#
-#         self.file_index = dict() # (shard, filename)
-#         # self.index = dict() # (shard, position, length)
-#         self.index = DbDict(os.path.join(path, "posting_index.db"), keytype=int)
-#
-#         # if vocab_size:
-#         #     # self.init_index(vocab_size)
-#         #     self.index = CompactStorage(3, vocab_size)
-#         #     self.index.active_storage_size = vocab_size
-#
-#
-#         self.opened_shards = dict() # (shard, file, mmap object) if mmap is none -> opened for write
-#
-#         self.shard_for_write = 0
-#         self.written_in_current_shard = 0
-#         self.shard_size=shard_size
-#
-#
-#     # def compact_index(self):
-#     #     sorted_keys = list(self.index.keys())
-#     #     sorted_keys.sort()
-#     #     for ind, el in enumerate(sorted_keys):
-#     #         if ind == 0: continue
-#     #         assert el - sorted_keys[ind-1] == 1
-#     #
-#     #     size = len(sorted_keys)
-#     #
-#     #     compact_index = np.zeros(shape=(size, 3), dtype = np.uint32)
-#     #     for key, val in self.index.items():
-#     #         compact_index[key, :] = np.fromiter(val, dtype=np.uint32)
-#     #
-#     #     size_before = sys.getsizeof(self.index) / 1024/ 1024
-#     #     size_after = sys.getsizeof(compact_index) / 1024/ 1024
-#     #     print(f"Before {size_before}MB, after {size_after}MB")
-#
-#     # def init_index(self, size):
-#     #     self.index = np.zeros(shape=(size, 3), dtype=np.uint32)
-#
-#     def add_posting(self, term_id, postings):
-#         if self.index is None:
-#             raise Exception("Index is not initialized")
-#
-#         serialized_doc = p.dumps(postings, protocol=4)
-#
-#         f, _ = self.writing_mode(self.shard_for_write)
-#
-#         position = f.tell()
-#         written = f.write(serialized_doc)
-#         # self.index[term_id] = (self.shard_for_write, position, written)
-#         self.index[term_id] = (self.shard_for_write, position, written)
-#         # self.index[term_id, :] = np.fromiter((self.shard_for_write, position, written), dtype=np.uint32)
-#         self.increment_byte_count(written)
-#         return term_id
-#
-#     def increment_byte_count(self, written):
-#         self.written_in_current_shard += written
-#         if self.written_in_current_shard >= self.shard_size:
-#             self.shard_for_write += 1
-#             self.written_in_current_shard = 0
-#
-#     def __getitem__(self, doc_id):
-#         return self.get_with_id(doc_id)
-#
-#     # def __iter__(self):
-#     #     self.iter_doc = 0
-#     #     return self
-#     #
-#     # def __next__(self):
-#     #     if self.iter_doc >= len(self.index):
-#     #         raise StopIteration()
-#     #     c_doc_id = self.iter_doc
-#     #     self.iter_doc += 1
-#     #     return c_doc_id, self[c_doc_id]
-#
-#     def get_with_id(self, term_id):
-#         shard, pos, len_ = self.index[term_id]
-#         _, mm = self.reading_mode(shard)
-#         return p.loads(mm[pos: pos+len_])
-#
-#     def get_name_format(self, id_):
-#         return 'postings_shard_{0:04d}'.format(id_)
-#
-#     def open_for_read(self, name):
-#         # raise filenotexists
-#         f = open(os.path.join(self.path, name), "r+b")
-#         mm = mmap.mmap(f.fileno(), 0)
-#         return f, mm
-#
-#     def open_for_write(self, name):
-#         # raise filenotexists
-#         self.check_dir_exists()
-#         f = open(os.path.join(self.path, name), "ab")
-#         return f, None
-#
-#     def check_dir_exists(self):
-#         if not os.path.isdir(self.path):
-#             os.mkdir(self.path)
-#
-#     def writing_mode(self, id_):
-#         if id_ not in self.opened_shards:
-#             if id_ not in self.file_index:
-#                 self.file_index[id_] = self.get_name_format(id_)
-#             self.opened_shards[id_] = self.open_for_write(self.file_index[id_])
-#         elif self.opened_shards[id_][1] is not None: # mmap is None
-#             self.opened_shards[id_][1].close()
-#             self.opened_shards[id_][0].close()
-#             self.opened_shards[id_] = self.open_for_write(self.file_index[id_])
-#         return self.opened_shards[id_]
-#
-#     def reading_mode(self, id_):
-#         if id_ not in self.opened_shards:
-#             if id_ not in self.file_index:
-#                 self.file_index[id_] = self.get_name_format(id_)
-#             self.opened_shards[id_] = self.open_for_read(self.file_index[id_])
-#         elif self.opened_shards[id_][1] is None:
-#             self.opened_shards[id_][0].close()
-#             self.opened_shards[id_] = self.open_for_read(self.file_index[id_])
-#         return self.opened_shards[id_]
-#
-#     def save_param(self):
-#         p.dump((
-#             self.file_index,
-#             self.shard_for_write,
-#             self.written_in_current_shard,
-#             self.shard_size,
-#             self.path
-#         ), open(os.path.join(self.path, "postings_params"), "wb"), protocol=4)
-#
-#     def load_param(self):
-#         self.file_index,\
-#         self.shard_for_write,\
-#         self.written_in_current_shard,\
-#         self.shard_size,\
-#         self.path = p.load(open(os.path.join(self.path, "postings_params"), "rb"))
-#
-#     def save_index(self):
-#         pass
-#         # p.dump(self.index, open(os.path.join(self.path, "postings_index"), "wb"), protocol=4)
-#
-#     def load_index(self):
-#         pass
-#         # self.index = p.load(open(os.path.join(self.path, "postings_index"), "rb"))
-#
-#     def save(self):
-#         self.save_index()
-#         self.save_param()
-#         self.close_all_shards()
-#
-#     @classmethod
-#     def load(cls, path):
-#         postings = PostingIndex(path)
-#         postings.load_param()
-#         postings.load_index()
-#         return postings
-#
-#
-#     def close_all_shards(self):
-#         for shard in self.opened_shards.values():
-#             for s in shard[::-1]:
-#                 if s:
-#                     s.close()
 
 
 class PostingIndex(KVStore):
@@ -348,20 +168,26 @@ class PostingIndex(KVStore):
         return term_id
 
 
+def test_BinaryRetrieval():
+    text_en = """<doc id="1300" url="https://en.wikipedia.org/wiki?curid=1300" title="Abalone">
+    Abalone
+
+    Abalone ( or ; via Spanish "", from the Rumsen language "aulón") is a common name for any of a group of small to very large sea snails, marine gastropod molluscs in the family Haliotidae.
+    Other common names are ear shells, sea ears, and muttonfish or muttonshells in Australia, former in Great Britain, perlemoen in South Africa, and in New Zealand.
+    S.W.A.T. M. D.
+    """
+
+    dcorpus = DocumentCorpus("dcorpus", "en")
+
+    dcorpus.add_docs([text_en, "It is nice here. It's true."])
+
+    ranker = BinaryRetrieval(dcorpus)
+
+    assert list(ranker.query("Abalone").keys())[0] == 0
+    assert list(ranker.query("It's true.").keys())[0] == 1
+
+
 if __name__ == "__main__":
-    # text_en = """<doc id="1300" url="https://en.wikipedia.org/wiki?curid=1300" title="Abalone">
-    # Abalone
-    #
-    # Abalone ( or ; via Spanish "", from the Rumsen language "aulón") is a common name for any of a group of small to very large sea snails, marine gastropod molluscs in the family Haliotidae.
-    # Other common names are ear shells, sea ears, and muttonfish or muttonshells in Australia, former in Great Britain, perlemoen in South Africa, and in New Zealand.
-    # S.W.A.T. M. D.
-    # """
-    #
-    # dcorpus = DocumentCorpus("dcorpus", "en")
-    #
-    # dcorpus.add_docs([text_en, "It is nice here. It's true."])
-    #
-    # BinaryRetrieval(dcorpus)
 
     import argparse
     parser = argparse.ArgumentParser()

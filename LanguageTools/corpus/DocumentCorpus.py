@@ -1,11 +1,9 @@
-from LanguageTools.corpus.TokenizedCorpus import TokenizedCorpus
-from LanguageTools.Tokenizer import Sentencizer
-# from LanguageTools.utils import CompactStorage
-from Closet import DbDict
 import os
 import pickle as p
-import numpy as np
 import sqlite3
+
+from LanguageTools.Tokenizer import Sentencizer
+from LanguageTools.corpus.TokenizedCorpus import TokenizedCorpus
 
 
 class DocumentAssociationStore:
@@ -50,6 +48,7 @@ class DocumentAssociationStore:
     def save(self):
         self.commit()
 
+
 class DocumentCorpus:
     def __init__(self, path, lang, vocab=None, tokenizer=None, shard_size=2000000, freeze_vocab=False):
         self.path = path
@@ -66,26 +65,8 @@ class DocumentCorpus:
         self.lang = lang
 
         self.doc_sent = DocumentAssociationStore(os.path.join(path, "doc_parts.db"))
-        # self.sent_to_doc = DbDict(os.path.join(path, "sent_to_doc.db"), keytype=int)
-        # self.doc_to_sent = DbDict(os.path.join(path, "doc_to_sent.db"), keytype=int)
-        # self.sent_to_doc = CompactStorage(1, 100000)
-        # self.doc_to_sent = CompactStorage(2, 1000)
-        # self.init_sent_to_doc(100000)
-        # self.init_doc_to_sent(1000)
 
         self.last_doc_id = len(self)
-
-    # def init_sent_to_doc(self, size):
-    #     self.sent_to_doc = np.zeros(shape=(size,), dtype=np.uint32)
-    #
-    # def init_doc_to_sent(self, size):
-    #     self.doc_to_sent = np.zeros(shape=(size,2), dtype=np.uint32)
-    #
-    # def resize_sent_to_doc(self, new_size):
-    #     self.sent_to_doc.resize((new_size,))
-    #
-    # def resize_doc_to_sent(self, new_size):
-    #     self.doc_to_sent.resize((new_size, 2))
 
     def add_docs(self, docs, save_instantly=True):
 
@@ -95,23 +76,8 @@ class DocumentCorpus:
         for doc in docs:
             added = self.corpus.add_docs(self.sentencizer(doc), save_instantly=save_instantly)
 
-            # if len(self.corpus) >= self.sent_to_doc.shape[0]:
-            #     self.resize_sent_to_doc(int(self.sent_to_doc.shape[0] * 1.2)) # conservative growth
-
             for a in added:
-                # assert a == len(self.sent_to_doc)  # TODO disable frequent requests to DB
-                # self.sent_to_doc.append(self.last_doc_id)  # this used with CompactStorage
                 self.doc_sent.add(self.last_doc_id, a)
-                # self.sent_to_doc[a] = self.last_doc_id  # this used with dict like
-
-            # if self.last_doc_id >= self.doc_to_sent.shape[0]:
-            #     self.resize_doc_to_sent(int(self.doc_to_sent.shape[0] * 1.2)) # conservative growth
-
-            # assert self.last_doc_id == len(self.doc_to_sent)  # TODO disable frequent requests to DB
-            # self.doc_to_sent.append((added[0], added[-1]+1))  # this used with CompactStorage
-            # self.doc_to_sent[self.last_doc_id] = (added[0], added[-1]+1)
-            # self.doc_to_sent[self.last_doc_id, 0] = added[0]
-            # self.doc_to_sent[self.last_doc_id, 1] = added[-1] + 1 # need to add one to use as argument for range()
 
             self.last_doc_id += 1
 
@@ -121,10 +87,8 @@ class DocumentCorpus:
 
     def __next__(self):
         if self.iter_doc < len(self):
-            # c_from, c_to = self.doc_to_sent[self.iter_doc]
             parts = [self.corpus[id_] for id_ in self.doc_sent.get_sents(self.iter_doc)]
             self.iter_doc += 1
-            # parts = [self.corpus[id_] for id_ in range(c_from, c_to)]
             return self.iter_doc - 1, parts
         else:
             raise StopIteration()
@@ -136,18 +100,15 @@ class DocumentCorpus:
         if isinstance(item, int):
             doc = self.doc_sent.get_doc(item)
             return doc
-            # return self.sent_to_doc[item]
         else:
             docs = [self.doc_sent.get_doc(i) for i in item]
             return docs
-            # return [self.sent_to_doc[i] for i in item]
 
     def __getitem__(self, item):
         if isinstance(item, int):
             if item >= self.last_doc_id:
                 raise IndexError("Document index out of range:", item)
             return [self.corpus[i] for i in self.doc_sent.get_sents(item)]
-            # return [self.corpus[i] for i in range(*self.doc_to_sent[item])]
 
     def check_dir_exists(self):
         if not os.path.isdir(self.path):
@@ -160,12 +121,8 @@ class DocumentCorpus:
         p.dump((
             self.path,
             self.lang,
-            # self.sent_to_doc,
-            # self.doc_to_sent,
             self.last_doc_id
         ), open(os.path.join(self.path, "doccorpus_params"), "wb"), protocol=4)
-        # self.sent_to_doc.commit()
-        # self.doc_to_sent.commit()
         self.doc_sent.commit()
         self.corpus.save()
         self.sentencizer = None
@@ -175,19 +132,15 @@ class DocumentCorpus:
         path, \
             lang, \
             last_doc_id = p.load(open(os.path.join(path, "doccorpus_params"), "rb"))
-            # sent_to_doc, \
-            # doc_to_sent, \
 
         doc_corpus = DocumentCorpus(path, lang)
-        # doc_corpus.sent_to_doc = sent_to_doc
-        # doc_corpus.doc_to_sent = doc_to_sent
         doc_corpus.last_doc_id = last_doc_id
         doc_corpus.corpus = TokenizedCorpus.load(path)
 
         return doc_corpus
 
 
-if __name__=="__main__":
+def test_DocumentCospus():
     text_en = """<doc id="1300" url="https://en.wikipedia.org/wiki?curid=1300" title="Abalone">
 Abalone
 
@@ -200,12 +153,14 @@ S.W.A.T. M. D.
 
     dcorpus.add_docs([text_en, "It is nice here. It's true."])
 
-    print(dcorpus[0])
-    print(dcorpus[1])
+    # print(dcorpus[0])
+    # print(dcorpus[1])
 
     dcorpus.save()
 
     dcorpus2 = DocumentCorpus.load("dcorpus")
 
-    print(dcorpus2[0])
-    print(dcorpus2[1])
+    assert dcorpus[0] == dcorpus2[0]
+    assert dcorpus[1] == dcorpus2[1]
+    # print(dcorpus2[0])
+    # print(dcorpus2[1])
