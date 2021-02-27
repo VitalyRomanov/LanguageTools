@@ -1,8 +1,7 @@
 from collections.abc import Iterable
-from LanguageTools.DocumentCorpus import DocumentCorpus
+from LanguageTools.corpus.DocumentCorpus import DocumentCorpus
 from LanguageTools.Tokenizer import Tokenizer
 from collections import Counter
-
 
 
 class SimilarityEngine:
@@ -40,7 +39,7 @@ class SimilarityEngine:
         doc_ranks = Counter()
 
         for sub_doc_id, rank in sub_doc_ranks.items():
-            doc_id = self.corpus.sent_to_doc[sub_doc_id]
+            doc_id = self.corpus.doc_sent.get_doc(sub_doc_id)
             if doc_id not in doc_ranks:
                 doc_ranks[doc_id] = 0.
             doc_ranks[doc_id] += rank

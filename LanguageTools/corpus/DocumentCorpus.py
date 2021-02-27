@@ -5,6 +5,50 @@ from Closet import DbDict
 import os
 import pickle as p
 import numpy as np
+import sqlite3
+
+
+class DocumentAssociationStore:
+    def __init__(self, path):
+        self.path = path
+
+        self.db = sqlite3.connect(path)
+        self.cur = self.db.cursor()
+        self.cur.execute("CREATE TABLE IF NOT EXISTS association ("
+                         "doc_id INTEGER NOT NULL, "
+                         "sent_id INTEGER NOT NULL)")
+
+        self.requires_commit = False
+
+    def add(self, doc_id, sent_id):
+        self.cur.execute(
+            "INSERT INTO association (doc_id, sent_id) VALUES (?,?)",
+            (doc_id, sent_id)
+        )
+        self.requires_commit = True
+
+    def get_sents(self, doc_id):
+        if self.requires_commit:
+            self.commit()
+        sents = self.cur.execute(f"SELECT sent_id FROM association WHERE doc_id = ?", (doc_id,)).fetchall()
+        return [s[0] for s in sents]
+
+    def get_doc(self, sent_id):
+        if self.requires_commit:
+            self.commit()
+        return self.cur.execute(f"SELECT doc_id FROM association WHERE sent_id = ?", (sent_id,)).fetchone()[0]
+
+    def commit(self):
+        self.db.commit()
+        self.requires_commit = False
+
+    def __len__(self):
+        if self.requires_commit:
+            self.commit()
+        return self.cur.execute("SELECT COUNT(DISTINCT doc_id) FROM association").fetchone()[0]
+
+    def save(self):
+        self.commit()
 
 class DocumentCorpus:
     def __init__(self, path, lang, vocab=None, tokenizer=None, shard_size=2000000, freeze_vocab=False):
@@ -21,8 +65,9 @@ class DocumentCorpus:
         self.sentencizer = None
         self.lang = lang
 
-        self.sent_to_doc = DbDict(os.path.join(path, "sent_to_doc.db"), keytype=int)
-        self.doc_to_sent = DbDict(os.path.join(path, "doc_to_sent.db"), keytype=int)
+        self.doc_sent = DocumentAssociationStore(os.path.join(path, "doc_parts.db"))
+        # self.sent_to_doc = DbDict(os.path.join(path, "sent_to_doc.db"), keytype=int)
+        # self.doc_to_sent = DbDict(os.path.join(path, "doc_to_sent.db"), keytype=int)
         # self.sent_to_doc = CompactStorage(1, 100000)
         # self.doc_to_sent = CompactStorage(2, 1000)
         # self.init_sent_to_doc(100000)
@@ -56,14 +101,15 @@ class DocumentCorpus:
             for a in added:
                 # assert a == len(self.sent_to_doc)  # TODO disable frequent requests to DB
                 # self.sent_to_doc.append(self.last_doc_id)  # this used with CompactStorage
-                self.sent_to_doc[a] = self.last_doc_id  # this used with dict like
+                self.doc_sent.add(self.last_doc_id, a)
+                # self.sent_to_doc[a] = self.last_doc_id  # this used with dict like
 
             # if self.last_doc_id >= self.doc_to_sent.shape[0]:
             #     self.resize_doc_to_sent(int(self.doc_to_sent.shape[0] * 1.2)) # conservative growth
 
             # assert self.last_doc_id == len(self.doc_to_sent)  # TODO disable frequent requests to DB
             # self.doc_to_sent.append((added[0], added[-1]+1))  # this used with CompactStorage
-            self.doc_to_sent[self.last_doc_id] = (added[0], added[-1]+1)
+            # self.doc_to_sent[self.last_doc_id] = (added[0], added[-1]+1)
             # self.doc_to_sent[self.last_doc_id, 0] = added[0]
             # self.doc_to_sent[self.last_doc_id, 1] = added[-1] + 1 # need to add one to use as argument for range()
 
@@ -75,27 +121,33 @@ class DocumentCorpus:
 
     def __next__(self):
         if self.iter_doc < len(self):
-            c_from, c_to = self.doc_to_sent[self.iter_doc]
+            # c_from, c_to = self.doc_to_sent[self.iter_doc]
+            parts = [self.corpus[id_] for id_ in self.doc_sent.get_sents(self.iter_doc)]
             self.iter_doc += 1
-            parts = [self.corpus[id_] for id_ in range(c_from, c_to)]
+            # parts = [self.corpus[id_] for id_ in range(c_from, c_to)]
             return self.iter_doc - 1, parts
         else:
             raise StopIteration()
 
     def __len__(self):
-        return len(self.doc_to_sent)
+        return len(self.doc_sent)
 
     def sent2doc(self, item):
         if isinstance(item, int):
-            return self.sent_to_doc[item]
+            doc = self.doc_sent.get_doc(item)
+            return doc
+            # return self.sent_to_doc[item]
         else:
-            return [self.sent_to_doc[i] for i in item]
+            docs = [self.doc_sent.get_doc(i) for i in item]
+            return docs
+            # return [self.sent_to_doc[i] for i in item]
 
     def __getitem__(self, item):
         if isinstance(item, int):
             if item >= self.last_doc_id:
                 raise IndexError("Document index out of range:", item)
-            return [self.corpus[i] for i in range(*self.doc_to_sent[item])]
+            return [self.corpus[i] for i in self.doc_sent.get_sents(item)]
+            # return [self.corpus[i] for i in range(*self.doc_to_sent[item])]
 
     def check_dir_exists(self):
         if not os.path.isdir(self.path):
@@ -111,9 +163,10 @@ class DocumentCorpus:
             # self.sent_to_doc,
             # self.doc_to_sent,
             self.last_doc_id
-        ), open(os.path.join(self.path, "docindex"), "wb"), protocol=4)
-        self.sent_to_doc.commit()
-        self.doc_to_sent.commit()
+        ), open(os.path.join(self.path, "doccorpus_params"), "wb"), protocol=4)
+        # self.sent_to_doc.commit()
+        # self.doc_to_sent.commit()
+        self.doc_sent.commit()
         self.corpus.save()
         self.sentencizer = None
 
@@ -121,7 +174,7 @@ class DocumentCorpus:
     def load(cls, path):
         path, \
             lang, \
-            last_doc_id = p.load(open(os.path.join(path, "docindex"), "rb"))
+            last_doc_id = p.load(open(os.path.join(path, "doccorpus_params"), "rb"))
             # sent_to_doc, \
             # doc_to_sent, \
 
