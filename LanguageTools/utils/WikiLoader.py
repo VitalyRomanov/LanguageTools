@@ -1,4 +1,5 @@
 import os
+import sys
 
 
 class WikiDataLoader:
@@ -88,6 +89,9 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     wiki = WikiDataLoader(args.wiki_location)
-    for doc in wiki:
-        doc = json.loads(doc)['text']
-        print(doc)
+    try:
+        for doc in wiki:
+            doc = json.loads(doc)['text']
+            print(doc)
+    except BrokenPipeError:
+        sys.exit()
