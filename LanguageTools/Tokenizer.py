@@ -66,7 +66,7 @@ class Tokenizer:
 
         match = self.pattern.search(lines)
 
-        if match is None: return iter(self.empty) # return empty iterator if no tokens
+        if match is None: return iter(self.empty) #  return empty iterator if no tokens
 
         last_token = None; ends_at = 0
 
@@ -139,7 +139,7 @@ S.W.A.T. M. D.
 
     text_ru = """Агноёстици́зм (от др.-греч. ἄγνωστος — непознанный) — философская концепция, согласно которой мир непознаваем и люди не могут знать ничего достоверного о действительной сущности вещей; позиция религиозного агностицизма заключается в том, что люди не могут знать ничего достоверного о Боге (или богах)[1][2][3][4][5]. В общеупотребительном смысле (особенно в англоязычной литературе) агностицизм нередко смешивают с атеизмом, со скептицизмом в отношении религии вообще[1][2][4]. """
 
-    from LanguageTools.wrappers.nltk_wrapper import Sentencizer
+
     sentencizer_en = Sentencizer("en")
     sentencizer_ru = Sentencizer("ru")
     tokenizer = Tokenizer()

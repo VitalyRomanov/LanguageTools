@@ -1,6 +1,6 @@
 #%%
-from LanguageTools.DocumentCorpus import DocumentCorpus
-from LanguageTools.rankers.BinaryRetrieval import BinaryRetrieval
+from LanguageTools.corpus import DocumentCorpus
+from LanguageTools.rankers import BinaryRetrieval
 import os, json
 import sys
 
@@ -54,7 +54,7 @@ dc = DocumentCorpus.load("test_doc_corpus_en")
 #
 # %%
 retr = BinaryRetrieval(dc)
-retr.save("binary_retr_en")
+retr.save()
 # retr = BinaryRetrieval.load("binary_retr_en")
 
 

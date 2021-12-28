@@ -3,7 +3,7 @@ import os
 import pickle as p
 from collections import Counter
 
-from Closet import KVStore
+from no_hassle_kv import KVStore
 from psutil import virtual_memory
 from tqdm import tqdm
 

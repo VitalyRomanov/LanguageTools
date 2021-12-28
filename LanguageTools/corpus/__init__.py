@@ -1,0 +1,2 @@
+from LanguageTools.corpus.DocumentCorpus import DocumentCorpus
+from LanguageTools.corpus.TokenizedCorpus import TokenizedCorpus

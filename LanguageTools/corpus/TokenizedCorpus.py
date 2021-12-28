@@ -3,32 +3,37 @@ import logging
 import os
 import pickle as p
 import types
+from typing import Iterable
 
-from Closet import KVStore
+from no_hassle_kv import KVStore
 
 from LanguageTools.Tokenizer import Token, Doc
 from LanguageTools.Tokenizer import Tokenizer, Sentencizer
 from LanguageTools.Vocabulary import SqliteVocabulary
 
 
-def isiterable(obj):
-    try:
-        iter(obj)
-    except Exception:
-        return False
-    else:
-        return True
+# def isiterable(obj):
+#     try:
+#         iter(obj)
+#     except Exception:
+#         return False
+#     else:
+#         return True
 
-def into_string(tokens):
-    out = ""
-    for t in tokens:
-        out += t.text
-        if t.tailspace:
-            out += " "
-    return out
+# def into_string(tokens):
+#     out = ""
+#     for t in tokens:
+#         out += t.text
+#         if t.tailspace:
+#             out += " "
+#     return out
 
 
 class TokenizedCorpus(KVStore):
+    """
+    Creates an on-disk storage for text corpus. Each text unit can be retrieved using an iterator or with index slices.
+    Corpus is stored in shards.
+    """
     vocab = None
     tok = None
     persist_tokenizer = False
@@ -36,13 +41,21 @@ class TokenizedCorpus(KVStore):
     index = None
 
     def __init__(self, path, vocab=None, tokenizer=None, shard_size=2000000, freeze_vocab=False):
-        super(TokenizedCorpus, self).__init__(path=path)
+        """
+        Initialize corpus storage
+        :param path: path where data will be stored
+        :param vocab: Vocabulary should be an instance of LanguageTools.Vocabulary
+        :param tokenizer: provide an instance of LanguageTools.Tokenizer with custom tokenization rules
+        :param shard_size: shard size in bytes
+        :param freeze_vocab: whether to add new words to vocabulary
+        """
+        super(TokenizedCorpus, self).__init__(path=path, shard_size=shard_size)
 
-        self.freeze_vocab = freeze_vocab
+        self._freeze_vocab = freeze_vocab
 
         if not vocab:
             self.vocab = SqliteVocabulary(os.path.join(path, "voc.db"))
-            self.freeze_vocab = False
+            self._freeze_vocab = False
         else:
             self.vocab = vocab
 
@@ -59,6 +72,9 @@ class TokenizedCorpus(KVStore):
         if self.tok is None:
             self.tok = Tokenizer()
         return self.tok
+
+    def freeze_vocab(self):
+        self._freeze_vocab = True
 
     def add_docs(self, docs, save_instantly=True):
 
@@ -91,7 +107,7 @@ class TokenizedCorpus(KVStore):
         return added
 
     def add_doc(self, doc):
-        if not self.freeze_vocab:
+        if not self._freeze_vocab:
             for token in doc:
                 self.vocab.add_token(token.text)
 
@@ -112,7 +128,7 @@ class TokenizedCorpus(KVStore):
             return Doc(self.wrap_into_token(self.get_with_id(doc_id)))
         elif isinstance(doc_id, slice):
             return (Doc(self.wrap_into_token(self.get_with_id(i))) for i in range(doc_id.start, doc_id.stop, doc_id.step))
-        elif isiterable(doc_id):
+        elif isinstance(doc_id, Iterable):
             return (Doc(self.wrap_into_token(self.get_with_id(i))) for i in doc_id)
         else:
             ValueError("Format not understood: doc_id can be int, slice, or iterable but found ", type(doc_id))
@@ -140,7 +156,7 @@ class TokenizedCorpus(KVStore):
             self.tok,
             self.persist_tokenizer,
             self.new_doc_id,
-            self.freeze_vocab,
+            self._freeze_vocab,
         ), open(os.path.join(self.path, "corpus_params"), "wb"), protocol=4)
 
     def load_param(self):
@@ -149,7 +165,7 @@ class TokenizedCorpus(KVStore):
         self.tok, \
             self.persist_tokenizer, \
             self.new_doc_id, \
-            self.freeze_vocab = p.load(open(os.path.join(self.path, "corpus_params"), "rb"))
+            self._freeze_vocab = p.load(open(os.path.join(self.path, "corpus_params"), "rb"))
 
     def save_vocab(self):
         # self.vocab.save(os.path.join(self.path, "vocab"))

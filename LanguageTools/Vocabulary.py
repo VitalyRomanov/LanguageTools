@@ -1,6 +1,7 @@
 import pickle as p
 import sqlite3
 from collections import Counter
+from pathlib import Path
 
 import numpy as np
 from numpy import array
@@ -8,15 +9,20 @@ from numpy.random import choice
 
 
 class Vocabulary:
+    def __init__(self, pad='<pad>', eos='</s>', unk='<unk>', **kwargs):
+        self.init_storage(**kwargs)
 
-    def __init__(self):
+        self.pad = pad
+        self.eos = eos
+        self.unk = unk
+
+        self.add(["<Lua heritage>", self.pad, self.eos, self.unk])
+
+    def init_storage(self, **kwargs):
         self.count = Counter()
         self.ids = {}
-        self.inv_ids = {}
+        self.inv_ids = []
         self.prob_valid = False
-
-        self.add(['UNK'])
-
 
     def add(self, tokens):
         for token in tokens:
@@ -30,7 +36,7 @@ class Vocabulary:
         else:
             new_id = len(self.ids)
             self.ids[token] = new_id
-            self.inv_ids[new_id] = token
+            self.inv_ids.append(token)
             self.count[new_id] = 1
 
     def drop_oov(self, tokens):
@@ -49,7 +55,7 @@ class Vocabulary:
         return [self.ids.get(token, 0) for token in tokens]
 
     def ids2tokens(self, ids):
-        return [self.inv_ids.get(token_id, 'UNK') for token_id in ids]
+        return [self.inv_ids[token_id] if token_id < len(self.inv_ids) else self.unk for token_id in ids]
 
     def __len__(self):
         return len(self.count)
@@ -71,12 +77,12 @@ class Vocabulary:
         return self.count.values()
 
     def calculate_prob(self):
-        p = array(list(self.count.values()))
+        p = np.array(list(self.count.values()))
         self.word_count_sum = np.sum(p)
         self.p = p / self.word_count_sum
         self.prob_valid = True
 
-    def sample(self,n_samples, limit_top=-1):
+    def sample(self, n_samples, limit_top=-1):
         # make sure that counts follow the order of ids
 
         if limit_top == -1:
@@ -85,7 +91,7 @@ class Vocabulary:
         if not self.prob_valid:
             self.calculate_prob()
 
-        if limit_top!=-1:
+        if limit_top != -1:
             p = self.p[:limit_top] / np.sum(self.p[:limit_top])
         else:
             p = self.p
@@ -165,11 +171,17 @@ class Vocabulary:
 #         self.ids.close()
 #         self.inv_ids.close()
 
-class CacheFull(Exception):
-    def __init__(self, *args, **kwargs):
-        super(CacheFull, self).__init__(*args, **kwargs)
 
-class SimpleCache:
+class CacheFull(Exception):
+    def __init__(self, *args):
+        super(CacheFull, self).__init__(*args)
+
+
+class SimpleLFUCache:
+    """
+    Simple implementation of LFU cache. Works by tracking frequency of keys. 80% of least
+    frequently used keys evicted by calling free()
+    """
     def __init__(self, size):
         self.size = size
         self.cache = dict()
@@ -211,23 +223,23 @@ class SimpleCache:
 
 class SqliteVocabulary(Vocabulary):
     def __init__(self, path, cache_size=2000000):
-        # super(SqliteVocabulary, self).__init__()
+        self.path = Path(path)
+        super(SqliteVocabulary, self).__init__(cache_size=cache_size)
 
-        self.path = path
-
-        self.db = sqlite3.connect(path)
+    def init_storage(self, cache_size=None):
+        self.db = sqlite3.connect(self.path)
         self.cur = self.db.cursor()
-        self.cur.execute("CREATE TABLE IF NOT EXISTS [vocabulary] ("
-                        "[word] TEXT PRIMARY KEY NOT NULL UNIQUE, "
-                        "[id] INTEGER NOT NULL UNIQUE, "
-                        "[count] INTEGER NOT NULL)")
+        self.cur.execute("CREATE TABLE IF NOT EXISTS vocabulary ("
+                         "word TEXT PRIMARY KEY NOT NULL UNIQUE, "
+                         "id INTEGER NOT NULL UNIQUE, "
+                         "count INTEGER NOT NULL)")
         self.build_inv_index()
 
         self.requires_commit = False
         self.need_inv_index = False
         self.newid = next(iter(self.cur.execute("select count(distinct word) from vocabulary")))[0]
 
-        self.cache = SimpleCache(cache_size)
+        self.cache = SimpleLFUCache(cache_size)
 
     def __contains__(self, item):
         if item in self.cache:
@@ -261,7 +273,7 @@ class SqliteVocabulary(Vocabulary):
             select, key, with_value = "word,count", "id", item
 
         try:
-            value = list(next(iter(self.cur.execute(f"SELECT {select} FROM [vocabulary] WHERE {key} = ?", (with_value,)))))
+            value = list(next(iter(self.cur.execute(f"SELECT {select} FROM vocabulary WHERE {key} = ?", (with_value,)))))
         except StopIteration:
             raise KeyError()
 
@@ -289,7 +301,7 @@ class SqliteVocabulary(Vocabulary):
     def write_from_cache(self):
         for word, (id, count) in iter(self.cache):
             if isinstance(word, str):
-                self.cur.execute("REPLACE INTO [vocabulary] (word, id, count) VALUES (?,?,?)", (word, id, count))
+                self.cur.execute("REPLACE INTO vocabulary (word, id, count) VALUES (?,?,?)", (word, id, count))
         self.commit()
 
     def get_count(self, id_):
@@ -318,12 +330,16 @@ class SqliteVocabulary(Vocabulary):
         if length is None:
             length = len(self)
         self.write_from_cache()
-        return [(id, word, count) for id, word, count in self.cur.execute(f"SELECT id, word, count FROM [vocabulary] LIMIT {length}").fetchall()]
+        return [
+            (id, word, count) for id, word, count in self.cur.execute(
+                f"SELECT id, word, count FROM vocabulary LIMIT {length}"
+            ).fetchall()
+        ]
         # return [(token_id, self.inv_ids[token_id], freq) for token_id, freq in self.count.most_common(length)]
 
     def __len__(self):
         self.write_from_cache()
-        return self.cur.execute("SELECT COUNT() FROM [vocabulary]").fetchone()[0]
+        return self.cur.execute("SELECT COUNT() FROM vocabulary").fetchone()[0]
 
     def __del__(self):
         self.cur.close()

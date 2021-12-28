@@ -1,20 +1,26 @@
-import os
 import pickle as p
 import sqlite3
+from pathlib import Path
 
 from LanguageTools.Tokenizer import Sentencizer
 from LanguageTools.corpus.TokenizedCorpus import TokenizedCorpus
 
 
 class DocumentAssociationStore:
+    """
+    Storage that keeps association between parts of a document.
+    """
     def __init__(self, path):
-        self.path = path
+        self.path = Path(path)
 
         self.db = sqlite3.connect(path)
         self.cur = self.db.cursor()
         self.cur.execute("CREATE TABLE IF NOT EXISTS association ("
                          "doc_id INTEGER NOT NULL, "
                          "sent_id INTEGER NOT NULL)")
+        self.cur.execute("CREATE INDEX IF NOT EXISTS idx_doc_id ON association(doc_id)")
+        self.cur.execute("CREATE INDEX IF NOT EXISTS idx_sent_id ON association(sent_id)")
+        self.commit()
 
         self.requires_commit = False
 
@@ -50,23 +56,34 @@ class DocumentAssociationStore:
 
 
 class DocumentCorpus:
-    def __init__(self, path, lang, vocab=None, tokenizer=None, shard_size=2000000, freeze_vocab=False):
-        self.path = path
+    """
+    Creates a storage for document collection. Each document is split into sentences.
+    """
+    def __init__(self, path, lang, vocab=None, tokenizer=None, shard_size=2000000000, freeze_vocab=False):
+        self.path = Path(path)
 
-        if not os.path.isdir(path):
-            os.mkdir(path)
+        if not self.path.is_dir():
+            self.path.mkdir()
 
         self.corpus = TokenizedCorpus(
-            path, vocab=vocab, tokenizer=tokenizer,
+            self.path, vocab=vocab, tokenizer=tokenizer,
             shard_size=shard_size, freeze_vocab=freeze_vocab
         )
 
         self.sentencizer = None
         self.lang = lang
 
-        self.doc_sent = DocumentAssociationStore(os.path.join(path, "doc_parts.db"))
+        self.doc_sent = DocumentAssociationStore(self.path.joinpath("doc_parts.db"))
 
         self.last_doc_id = len(self)
+
+    def add_doc(self, doc, save_instantly=True):
+        added = self.corpus.add_docs(self.sentencizer(doc), save_instantly=save_instantly)
+
+        for a in added:
+            self.doc_sent.add(self.last_doc_id, a)
+
+        self.last_doc_id += 1
 
     def add_docs(self, docs, save_instantly=True):
 
@@ -74,12 +91,7 @@ class DocumentCorpus:
             self.sentencizer = Sentencizer(self.lang)
 
         for doc in docs:
-            added = self.corpus.add_docs(self.sentencizer(doc), save_instantly=save_instantly)
-
-            for a in added:
-                self.doc_sent.add(self.last_doc_id, a)
-
-            self.last_doc_id += 1
+            self.add_doc(doc, save_instantly=save_instantly)
 
     def __iter__(self):
         self.iter_doc = 0
@@ -111,10 +123,12 @@ class DocumentCorpus:
             return [self.corpus[i] for i in self.doc_sent.get_sents(item)]
 
     def check_dir_exists(self):
-        if not os.path.isdir(self.path):
-            os.mkdir(self.path)
+        if not self.path.is_dir():
+            self.path.mkdir()
 
     def importance(self, token):
+        # TODO
+        # implement
         return 1.0
 
     def save(self):
@@ -122,7 +136,7 @@ class DocumentCorpus:
             self.path,
             self.lang,
             self.last_doc_id
-        ), open(os.path.join(self.path, "doccorpus_params"), "wb"), protocol=4)
+        ), open(self.path.joinpath("doccorpus_params"), "wb"), protocol=4)
         self.doc_sent.commit()
         self.corpus.save()
         self.sentencizer = None
@@ -131,7 +145,7 @@ class DocumentCorpus:
     def load(cls, path):
         path, \
             lang, \
-            last_doc_id = p.load(open(os.path.join(path, "doccorpus_params"), "rb"))
+            last_doc_id = p.load(open(path.joinpath("doccorpus_params"), "rb"))
 
         doc_corpus = DocumentCorpus(path, lang)
         doc_corpus.last_doc_id = last_doc_id

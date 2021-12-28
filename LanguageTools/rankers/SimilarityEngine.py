@@ -1,6 +1,7 @@
 from collections.abc import Iterable
+from typing import Union
+
 from LanguageTools.corpus.DocumentCorpus import DocumentCorpus
-from LanguageTools.Tokenizer import Tokenizer
 from collections import Counter
 
 
@@ -11,18 +12,23 @@ class SimilarityEngine:
     def __init__(self, corpus: DocumentCorpus):
         self.corpus = corpus
 
-    def query(self, q, exact=False, do_expansion=False, spellcheck=False):
+    def query(self, q: Union[str, Iterable], exact=False, do_expansion=False, spellcheck=False):
         if isinstance(q, str):
-            token_ids = [(self.corpus.corpus.vocab[t.text], self.corpus.importance(t.text)) for t in self.corpus.corpus.tokenizer.token_gen(q)]
-        if isinstance(q, Iterable): # may be this is not what i think
-            pass
+            token_ids = [
+                (
+                    self.corpus.corpus.vocab[t.text],  # token_id
+                    self.corpus.importance(t.text)  # token idf
+                ) for t in self.corpus.corpus.tokenizer.token_gen(q)
+            ]
+        elif isinstance(q, Iterable): # may be this is not what i think
+            token_ids = q
         else:
             raise TypeError("Type is not understood:", type(q))
 
         if spellcheck:
-            pass # generate several candidate queries
+            pass  # generate several candidate queries
 
-        if not exact and do_expansion :
+        if not exact and do_expansion:
             token_ids = self.query_expansion(token_ids)
 
         # spellchecker should produce several correction candidates (or maybe one)
@@ -31,7 +37,7 @@ class SimilarityEngine:
         return relevant_docs
 
     def query_expansion(self, tokens):
-        pass # add extra words
+        pass  # add extra words
         return tokens
 
     def retrieve(self, sub_doc_ranks):
@@ -53,8 +59,8 @@ class SimilarityEngine:
         pass
 
     def save(self):
-        pass # not implemented
+        pass  # not implemented
 
     @classmethod
-    def load(cls):
-        pass # not implemented
+    def load(cls, path):
+        pass  # not implemented
