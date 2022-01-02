@@ -4,7 +4,6 @@ from collections import Counter
 from pathlib import Path
 
 import numpy as np
-from numpy import array
 from numpy.random import choice
 
 

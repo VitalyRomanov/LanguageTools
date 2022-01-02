@@ -8,7 +8,8 @@ setup(name='LanguageTools',
             "numpy",
             "gensim",
             "psutil",
-            "tqdm"
+            "tqdm",
+            "nltk"
       ],
       ext_modules=cythonize("LanguageTools/utils/extra_utils.pyx"),
       )
