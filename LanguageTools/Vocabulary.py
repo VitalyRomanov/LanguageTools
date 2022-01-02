@@ -68,6 +68,12 @@ class Vocabulary:
         else:
             raise KeyError("")
 
+    def get(self, item, default):
+        try:
+            return self[item]
+        except KeyError:
+            return default
+
     def most_common(self, length=None):
         if length is None:
             length = len(self)
