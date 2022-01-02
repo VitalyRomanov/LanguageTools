@@ -1,25 +1,31 @@
+import json
+import sys
+from array import array
 import mmap
 import os
 import pickle as p
 from collections import Counter
+from pathlib import Path
 
+from more_itertools import windowed
 from no_hassle_kv import KVStore
 from psutil import virtual_memory
 from tqdm import tqdm
 
+from LanguageTools.Tokenizer import Doc
 from LanguageTools.corpus.DocumentCorpus import DocumentCorpus
 from LanguageTools.rankers import SimilarityEngine
 from LanguageTools.rankers.utils import check_dir_exists
 
 
-def dump_shard(path, id, shard_postings):
+def dump_shard(path, id, postings_shard):
     post_name = os.path.join(path, "temp_shard_posting_{0:06d}".format(id))
     indx_name = os.path.join(path, "temp_shard_index_{0:06d}".format(id))
 
     index = dict()
 
     with open(post_name, "wb") as shard_sink:
-        for key, postings in shard_postings.items():
+        for key, postings in postings_shard.items():
             position = shard_sink.tell()
             written = shard_sink.write(p.dumps(postings, protocol=4))
 
@@ -33,15 +39,17 @@ def dump_shard(path, id, shard_postings):
 def merge_shards(path, vocab, shards):
 
     shards_ = []
+    terms = set()
     for index_path, shard_path in shards:
         shard_index = p.load(open(index_path, "rb"))
         f = open(shard_path, "r+b")
         mm = mmap.mmap(f.fileno(), 0)
         shards_.append((shard_index, mm))
+        terms.update(shard_index.keys())
 
     index = PostingIndex(path)
 
-    for t_id, _, _ in tqdm(vocab.most_common(), desc="Postprocessing: ", leave=False):
+    for t_id in tqdm(terms, desc="Postprocessing: ", leave=False):
         p_ = set()
 
         for s_ind, s_file in shards_:
@@ -50,7 +58,9 @@ def merge_shards(path, vocab, shards):
                 postings = p.loads(s_file[pos_: pos_+len_])  # shard store sets
                 p_ |= postings
 
-        index.add_posting(t_id, p_)
+        doc_list = list(p_)
+        doc_list.sort()
+        index.add_posting(t_id, array("Q", doc_list))
 
     index.save()  # remove files
 
@@ -62,13 +72,13 @@ def merge_shards(path, vocab, shards):
 
 
 class BinaryRetrieval(SimilarityEngine):
-    def __init__(self, corpus: DocumentCorpus, index_instantly=False):
+    def __init__(self, corpus: DocumentCorpus, index_instantly=False, add_bigrams=False):
         self.path = corpus.path
 
         if not isinstance(corpus, DocumentCorpus):
             raise TypeError("corpus should be an instance of DocumentCorpus")
 
-        super(BinaryRetrieval, self).__init__(corpus=corpus)
+        super(BinaryRetrieval, self).__init__(corpus=corpus, add_bigrams=add_bigrams)
 
         self.inv_index = None
         if index_instantly:
@@ -76,7 +86,22 @@ class BinaryRetrieval(SimilarityEngine):
 
     @classmethod
     def posting_path(cls, corpus_path):
-        return os.path.join(corpus_path, "postings")
+        return corpus_path.joinpath("postings")
+
+    # def prepare_tokens_for_index(self, doc):
+    #     return (tok.id for tok in doc)
+
+    def prepare_tokens_for_index(self, doc):
+        token_ids = []
+        for tok in doc:
+            token_id = tok.id
+            assert token_id is not None, "token id is None, fatal error"
+            token_ids.append(token_id)
+
+        if self.add_bigrams:
+            token_ids += self.get_bigrams(token_ids)
+
+        return token_ids
 
     def build_index(self):
         # TODO
@@ -90,34 +115,43 @@ class BinaryRetrieval(SimilarityEngine):
 
         shards = []
         shard_id = 0
-        shard_postings = dict()
+        postings_shard = dict()
 
         for doc_ind, (id_, doc) in tqdm(
                 enumerate(self.corpus.corpus),
                 total=len(self.corpus.corpus), desc="Indexing: ", leave=False
         ):
-            for token in doc:
-                assert token.id is not None, "token id is None, fatal error"
-                if token.id not in shard_postings:
-                    shard_postings[token.id] = set()
-                shard_postings[token.id].add(id_)
+            for token_id in self.prepare_tokens_for_index(doc):
+                assert token_id is not None, "token id is None, fatal error"
+                if token_id not in postings_shard:
+                    postings_shard[token_id] = set()
+                postings_shard[token_id].add(id_)
+
+            # if self.add_bigrams:
+            #     for bigram in self.into_bigrams(doc):
+            #         if bigram not in postings_shard:
+            #             postings_shard[bigram] = set()
+            #         postings_shard[bigram].add(id_)
 
             if doc_ind % 1000 == 0:
-                size = virtual_memory().available / 1024 / 1024  # total_size(shard_postings)
+                size = virtual_memory().available / 1024 / 1024  # total_size(postings_shard)
                 # if size >= 1024*1024*1024: #1 GB
                 if size <= 300:  # 100 MB
                     print(f"Only {size} mb of free RAM left")
-                    shards.append(dump_shard(self.corpus.path, shard_id, shard_postings))
+                    shards.append(dump_shard(self.corpus.path, shard_id, postings_shard))
 
-                    del shard_postings
-                    shard_postings = dict()
+                    del postings_shard
+                    postings_shard = dict()
                     shard_id += 1
 
-        if len(shard_postings) > 0:
-            shards.append(dump_shard(self.corpus.path, shard_id, shard_postings))
+        if len(postings_shard) > 0:
+            shards.append(dump_shard(self.corpus.path, shard_id, postings_shard))
 
-        self.inv_index = merge_shards(self.posting_path(self.path), self.corpus.corpus.vocab, shards)
+        self.merge_shards(shards)
         self.save()
+
+    def merge_shards(self, shards):
+        self.inv_index = merge_shards(self.posting_path(self.path), self.corpus.corpus.vocab, shards)
 
     def retrieve_sub_rank(self, tokens):
 
@@ -133,32 +167,125 @@ class BinaryRetrieval(SimilarityEngine):
 
     def retrieve_sub(self, tokens):
         # this does not work with query expansion
+        empty = array("Q")
 
         doc_ranks = Counter()
-        for doc_id in set.intersection(*[self.inv_index[t_id] for t_id, rank in tokens]):
+        # for doc_id in set.intersection(*[self.inv_index.get(t_id, empty) for t_id, rank in self.filter_stopwords(tokens)]):
+        for doc_id in self.doc_list_intersection(
+                *[self.inv_index.get(t_id, empty) for t_id, rank in self.filter_stopwords(tokens)]
+        ):
+            # if [t[0] for t in tokens] in self.corpus.corpus[doc_id]:
             doc_ranks[doc_id] = 1.
 
         return doc_ranks
+
+    @property
+    def runtime_version(self):
+        return f"python_{sys.version_info.major}.{sys.version_info.minor}"
+
+    @property
+    def class_name(self):
+        return self.__class__.__name__
+
+    def get_config_path(self):
+        return self.posting_path(self.path).joinpath("config.json")
+
+    def save_config(self):
+        config = {
+            "runtime_version": self.runtime_version,
+            "class_name": self.class_name,
+            "add_bigrams": self.add_bigrams,
+        }
+
+        with open(self.get_config_path(), "w") as config_sink:
+            config_str = json.dumps(config, indent=4)
+            config_sink.write(config_str)
+
+    def read_config(self):
+        with open(self.get_config_path(), "r") as config_sourse:
+            config_str = config_sourse.read()
+            config = json.loads(config_str)
+
+            runtime_version = config.pop("runtime_version")
+            class_name = config.pop("class_name")
+            assert runtime_version == self.runtime_version
+            assert class_name == self.class_name
+
+            for name, val in config.items():
+                setattr(self, name, val)
 
     def save(self):
         check_dir_exists(self.path)
         if self.inv_index is not None:
             self.inv_index.save()
+        self.save_config()
 
     @classmethod
     def load(cls, path):
-        corpus = DocumentCorpus.load(p.load(open(path, "rb")))
-        inv_index = PostingIndex.load(p.load(open(BinaryRetrieval.posting_path(path), "rb")))
+        path = Path(path)
+        corpus = DocumentCorpus.load(path)
+        inv_index = PostingIndex.load(cls.posting_path(path))
 
-        retr = BinaryRetrieval(corpus, index_instantly=False)
+        retr = cls(corpus, index_instantly=False)
         retr.inv_index = inv_index
+        retr.read_config()
         return retr
+
+
+class BinaryRetrievalBiword(BinaryRetrieval):
+    def __init__(self, *args, **kwargs):
+
+        class BiwordVocabulary:
+            def __init__(self):
+                self.count = Counter()
+
+            def add(self, biword_hash):
+                self.count[biword_hash] += 1
+
+            def most_common(self):
+                return ((value, None, count) for value, count in self.count.most_common())
+
+        self.biword_voc = BiwordVocabulary()
+
+        super(BinaryRetrievalBiword, self).__init__(*args, **kwargs)
+
+    def prepare_tokens_for_index(self, doc):
+        token_ids = []
+        for tok in doc:
+            token_id = tok.id
+            assert token_id is not None, "token id is None, fatal error"
+            token_ids.append(token_id)
+
+        bigram_ids = []
+        for bigram in windowed(token_ids, 2):
+            bigram_hash = self.get_hash(bigram)
+            self.biword_voc.add(bigram_hash)
+            bigram_ids.append(
+                bigram_hash
+            )
+        return bigram_ids
+
+    def merge_shards(self, shards):
+        self.inv_index = merge_shards(self.posting_path(self.path), self.biword_voc, shards)
+
+    def into_bigrams(self, doc):
+        if isinstance(doc, Doc):
+            token_ids = [tok.id for tok in doc]
+        else:
+            token_ids = [tok[0] for tok in doc]
+        return self.get_bigrams(token_ids)
+
+    def additional_processing(self, token_ids):
+        return [(self.get_hash(bi), 1.) for bi in self.into_bigrams(token_ids)]
 
 
 class PostingIndex(KVStore):
 
-    def __init__(self, path, shard_size=2**30):
-        super(PostingIndex, self).__init__(path=path, shard_size=shard_size)
+    def __init__(self, path, shard_size=2**30, **kwargs):
+        super(PostingIndex, self).__init__(
+            path=path, shard_size=shard_size,
+            serializer=lambda x: x.tobytes(), deserializer=lambda x: array("Q", x)
+        )
 
     def add_posting(self, term_id, postings):
         if self.index is None:
