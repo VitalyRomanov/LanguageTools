@@ -9,7 +9,8 @@ setup(name='LanguageTools',
             "gensim",
             "psutil",
             "tqdm",
-            "nltk"
+            "nltk",
+            "more_itertools"
       ],
       ext_modules=cythonize("LanguageTools/utils/extra_utils.pyx"),
       )

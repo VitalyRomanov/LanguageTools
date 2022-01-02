@@ -184,7 +184,7 @@ class CacheFull(Exception):
 
 class SimpleLFUCache:
     """
-    Simple implementation of LFU cache. Works by tracking frequency of keys. 80% of least
+    Simple implementation of LFU cache. Works by tracking frequency of keys. 50% of least
     frequently used keys evicted by calling free()
     """
     def __init__(self, size):
@@ -208,7 +208,7 @@ class SimpleLFUCache:
     def __contains__(self, item):
         return item in self.cache
 
-    def free(self, fraction=0.8):
+    def free(self, fraction=0.5):
         # self.cache = dict()
         # self.count = Counter()
         total = sum(self.count.values())
@@ -227,7 +227,7 @@ class SimpleLFUCache:
 
 
 class SqliteVocabulary(Vocabulary):
-    def __init__(self, path, cache_size=2000000):
+    def __init__(self, path, cache_size=4000000):
         self.path = Path(path)
         super(SqliteVocabulary, self).__init__(cache_size=cache_size)
 
