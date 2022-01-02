@@ -6,7 +6,10 @@ setup(name='LanguageTools',
       py_modules=['LanguageTools'],
       install_requires=[
             "numpy",
-            "gensim"
+            "gensim",
+            "cython",
+            "psutil",
+            "tqdm"
       ],
       ext_modules=cythonize("LanguageTools/utils/extra_utils.pyx"),
       )
