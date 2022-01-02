@@ -2,7 +2,7 @@ import pickle as p
 import sqlite3
 from pathlib import Path
 
-from LanguageTools.Tokenizer import Sentencizer
+from LanguageTools.Tokenizer import Sentencizer, MultiDoc
 from LanguageTools.corpus.TokenizedCorpus import TokenizedCorpus
 
 
@@ -59,7 +59,9 @@ class DocumentCorpus:
     """
     Creates a storage for document collection. Each document is split into sentences.
     """
-    def __init__(self, path, lang, vocab=None, tokenizer=None, shard_size=2000000000, freeze_vocab=False):
+    def __init__(
+            self, path, lang, vocab=None, tokenizer=None, shard_size=2000000000, freeze_vocab=False, lowercase=False
+    ):
         self.path = Path(path)
 
         if not self.path.is_dir():
@@ -67,7 +69,7 @@ class DocumentCorpus:
 
         self.corpus = TokenizedCorpus(
             self.path, vocab=vocab, tokenizer=tokenizer,
-            shard_size=shard_size, freeze_vocab=freeze_vocab
+            shard_size=shard_size, freeze_vocab=freeze_vocab, lowercase=lowercase
         )
 
         self.sentencizer = None
@@ -97,11 +99,14 @@ class DocumentCorpus:
         self.iter_doc = 0
         return self
 
+    def format_output(self, docs):
+        return MultiDoc(docs)
+
     def __next__(self):
         if self.iter_doc < len(self):
             parts = [self.corpus[id_] for id_ in self.doc_sent.get_sents(self.iter_doc)]
             self.iter_doc += 1
-            return self.iter_doc - 1, parts
+            return self.iter_doc - 1, self.format_output(parts)
         else:
             raise StopIteration()
 
@@ -120,7 +125,13 @@ class DocumentCorpus:
         if isinstance(item, int):
             if item >= self.last_doc_id:
                 raise IndexError("Document index out of range:", item)
-            return [self.corpus[i] for i in self.doc_sent.get_sents(item)]
+            return self.format_output([self.corpus[i] for i in self.doc_sent.get_sents(item)])
+
+    def get_as_token_ids(self, item):
+        if isinstance(item, int):
+            if item >= self.last_doc_id:
+                raise IndexError("Document index out of range:", item)
+            return self.format_output([self.corpus.get_as_token_ids(i) for i in self.doc_sent.get_sents(item)])
 
     def check_dir_exists(self):
         if not self.path.is_dir():
@@ -143,6 +154,7 @@ class DocumentCorpus:
 
     @classmethod
     def load(cls, path):
+        path = Path(path)
         path, \
             lang, \
             last_doc_id = p.load(open(path.joinpath("doccorpus_params"), "rb"))
