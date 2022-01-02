@@ -40,7 +40,7 @@ class TokenizedCorpus(KVStore):
     file_index = None
     index = None
 
-    def __init__(self, path, vocab=None, tokenizer=None, shard_size=2000000, freeze_vocab=False):
+    def __init__(self, path, vocab=None, tokenizer=None, shard_size=2000000, freeze_vocab=False, lowercase=False):
         """
         Initialize corpus storage
         :param path: path where data will be stored
@@ -52,6 +52,7 @@ class TokenizedCorpus(KVStore):
         super(TokenizedCorpus, self).__init__(path=path, shard_size=shard_size)
 
         self._freeze_vocab = freeze_vocab
+        self._lower = lowercase
 
         if not vocab:
             self.vocab = SqliteVocabulary(os.path.join(path, "voc.db"))
@@ -89,7 +90,7 @@ class TokenizedCorpus(KVStore):
 
         for doc in docs:
             if isinstance(doc, str):
-                tokenized_doc = list(self.tok.token_gen(doc))
+                tokenized_doc = list(self.tok.token_gen(doc, lower=self._lower))
             elif isinstance(doc, list):
                 tokenized_doc = doc
             elif isinstance(doc, types.GeneratorType):
@@ -133,6 +134,9 @@ class TokenizedCorpus(KVStore):
         else:
             ValueError("Format not understood: doc_id can be int, slice, or iterable but found ", type(doc_id))
 
+    def get_as_token_ids(self, doc_id):
+        return Doc(self.wrap_into_token(self.get_with_id(doc_id), fill_text=False))
+
     def __iter__(self):
         self.iter_doc = 0
         return self
@@ -145,8 +149,8 @@ class TokenizedCorpus(KVStore):
         else:
             raise StopIteration()
 
-    def wrap_into_token(self, tokens):
-        return (Token(tailspace=t[1], text=self.vocab[t[0]], id=t[0]) for t in tokens)
+    def wrap_into_token(self, tokens, fill_text=True):
+        return (Token(tailspace=t[1], text=self.vocab[t[0]] if fill_text else None, id=t[0]) for t in tokens)
 
     def save_corpus_param(self):
         if not self.persist_tokenizer:
