@@ -1,7 +1,12 @@
 import re
+from typing import List
+
 from gensim.utils import deaccent
 from types import GeneratorType
+
+from LanguageTools.utils.extra_utils import tokens_contain
 from LanguageTools.wrappers.nltk_wrapper import Sentencizer
+
 
 class Token:
     def __init__(self, text, tailspace, id=None, **kwargs):
@@ -15,6 +20,14 @@ class Token:
 
     def __repr__(self):
         return repr(self.text)
+
+    def __eq__(self, other):
+        if isinstance(other, int):
+            if self.id is None:
+                raise ValueError("Cannot compare using id, id for token is not assigned")
+            return self.id == other
+        elif isinstance(other, str):
+            return self.text == other
 
 
 class Doc:
@@ -44,6 +57,71 @@ class Doc:
                str_ += " "
         return str_
 
+    def __contains__(self, tokens: List[int]):
+        # doc_ids = [t.id for t in self.tokens]
+        return tokens_contain(self.tokens, tokens) == 1
+
+    # def __contains__(self, tokens: List[int]) -> bool:
+    #     for win in windowed(self.tokens, n=len(tokens)):
+    #         for t, tok in zip(tokens, win):
+    #             if t != tok.id:
+    #                 break
+    #         else:
+    #             return True
+    #     return False
+    #     # # for ind, tok in enumerate(self.tokens):
+    #     # #     for t in tokens:
+    #     # #         print(tok.text, tok.id, t)
+    #     # #         if t != tok.id:
+    #     # #             break
+    #     # #     else:
+    #     # #         return True
+    #     # # return False
+    #     j: int = 0
+    #     k: int = 0
+    #     num_tokens = len(tokens)
+    #     while j < len(self):
+    #         if tokens[k] == self.tokens[j].id:
+    #             k += 1
+    #             j += 1
+    #             if k == num_tokens:
+    #                 return True
+    #         elif k == 0:
+    #             j += 1
+    #         else:
+    #             k = 0
+    #     return False
+
+
+class MultiDoc:
+    def __init__(self, docs):
+        if isinstance(docs, list):
+            self.docs = docs
+        if isinstance(docs, GeneratorType):
+            self.docs = list(docs)
+
+    def __iter__(self):
+        return iter(self.docs)
+
+    def __len__(self):
+        return sum(len(doc) for doc in self.docs)
+
+    def __repr__(self):
+        return str(self)
+
+    def __getitem__(self, item):
+        return self.docs[item]
+
+    def __str__(self):
+        return " ".join(str(doc) for doc in self.docs)
+
+    def __contains__(self, tokens: List[int]):
+        for doc in self.docs:
+            if tokens in doc:
+                return True
+        else:
+            return False
+
 
 class Tokenizer:
     regexp = "(?:(?:https?|ftp):\/\/|\b(?:[a-z\d]+\.))(?:(?:[^\s()<>]+|\((?:[^\s()<>]+|(?:\([^\s()<>]+\)))?\))+(?:\((?:[^\s()<>]+|(?:\(?:[^\s()<>]+\)))?\)|[^\s`!()\[\]{};:'\".,<>?«»“”‘’]))?|[\w][\w-]+[\w]|[\w]\.|[\w]+|[^\w\s]|[0-9]+"
@@ -59,7 +137,7 @@ class Tokenizer:
         tokens = self.token_gen(lines_str, lower=lower, remove_accents=remove_accents)
         return Doc(tokens)
 
-    def token_gen(self, lines_str, lower = False, remove_accents=True):
+    def token_gen(self, lines_str, lower=False, remove_accents=True):
 
         lines = deaccent(lines_str.strip()) if remove_accents else lines_str
         lines = lines.lower() if lower else lines
