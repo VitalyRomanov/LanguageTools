@@ -7,7 +7,6 @@ setup(name='LanguageTools',
       install_requires=[
             "numpy",
             "gensim",
-            "cython",
             "psutil",
             "tqdm"
       ],
