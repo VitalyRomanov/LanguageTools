@@ -62,7 +62,7 @@ class SimilarityEngine:
         if spellcheck:
             pass  # generate several candidate queries
 
-        original_query_tokens = token_ids
+        # original_query_tokens = token_ids
         if self.add_bigrams:
             token_ids = token_ids + self.get_bigrams(token_ids)
 
@@ -80,10 +80,10 @@ class SimilarityEngine:
         # here need to retrieve both queries and rank which query was more likely
         relevant_docs = self.retrieve(self.retrieve_sub(token_ids) if exact else self.retrieve_sub_rank(token_ids))
 
-        if exact:
-            relevant_docs = {
-                key: val for key, val in relevant_docs.items() if original_query_tokens in self.corpus.get_as_token_ids(key)
-            }
+        # if exact:
+        #     relevant_docs = {
+        #         key: val for key, val in relevant_docs.items() if original_query_tokens in self.corpus.get_as_token_ids(key)
+        #     }
         return relevant_docs
 
     def additional_processing(self, token_ids):

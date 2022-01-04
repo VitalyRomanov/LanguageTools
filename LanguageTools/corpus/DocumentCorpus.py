@@ -60,7 +60,8 @@ class DocumentCorpus:
     Creates a storage for document collection. Each document is split into sentences.
     """
     def __init__(
-            self, path, lang, vocab=None, tokenizer=None, shard_size=2000000000, freeze_vocab=False, lowercase=False
+            self, path, lang, vocab=None, tokenizer=None, shard_size=2000000000, freeze_vocab=False, lowercase=False,
+            remove_accents=True
     ):
         self.path = Path(path)
 
@@ -69,7 +70,7 @@ class DocumentCorpus:
 
         self.corpus = TokenizedCorpus(
             self.path, vocab=vocab, tokenizer=tokenizer,
-            shard_size=shard_size, freeze_vocab=freeze_vocab, lowercase=lowercase
+            shard_size=shard_size, freeze_vocab=freeze_vocab, lowercase=lowercase, remove_accents=remove_accents
         )
 
         self.sentencizer = None

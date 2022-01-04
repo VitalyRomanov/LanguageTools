@@ -2,14 +2,15 @@
 import logging
 import os
 import pickle as p
+import struct
 import types
 from typing import Iterable
 
-from no_hassle_kv import KVStore
+from no_hassle_kv import CompactKeyValueStore
 
 from LanguageTools.Tokenizer import Token, Doc
 from LanguageTools.Tokenizer import Tokenizer, Sentencizer
-from LanguageTools.Vocabulary import SqliteVocabulary
+from LanguageTools.Vocabulary import Vocabulary
 
 
 # def isiterable(obj):
@@ -29,7 +30,51 @@ from LanguageTools.Vocabulary import SqliteVocabulary
 #     return out
 
 
-class TokenizedCorpus(KVStore):
+class TokenizedCorpusSerializer:
+    format = "=Lc"
+    item_size = struct.calcsize(format)
+
+    @staticmethod
+    def get_serializer():
+        item_size = TokenizedCorpusSerializer.item_size
+        format = TokenizedCorpusSerializer.format
+
+        def serialize_doc(doc: Doc):
+            # transformed_doc = [(t.id, t.tailspace) for t in doc]
+            # return pickle.dumps(transformed_doc, protocol=4)
+            buffer = bytearray(item_size * len(doc))
+            for ind, token in enumerate(doc):
+                bytes_ = struct.pack(format, token.id, b'\x01' if token.tailspace else b'\x00')
+                start = ind * item_size
+                end = start + item_size
+                buffer[start: end] = bytes_
+            return bytes(buffer)
+        return serialize_doc
+
+    @staticmethod
+    def get_deserializer():
+        item_size = TokenizedCorpusSerializer.item_size
+        format = TokenizedCorpusSerializer.format
+
+        def deserialize_doc(buffer):
+            tokens = []
+            num_tokens = len(buffer) // item_size
+
+            def get_tokens():
+                # tokens = pickle.loads(buffer)
+                # return (Token(text=None, id=t[0], tailspace=t[1]) for t in tokens)
+                for ind in range(num_tokens):
+                    start = ind * item_size
+                    end = start + item_size
+                    token_id, space = struct.unpack(format, buffer[start: end])
+                    yield Token(text=None, tailspace=True if space == b'\x01' else False, id=token_id)
+
+            return Doc(get_tokens())
+
+        return deserialize_doc
+
+
+class TokenizedCorpus(CompactKeyValueStore):
     """
     Creates an on-disk storage for text corpus. Each text unit can be retrieved using an iterator or with index slices.
     Corpus is stored in shards.
@@ -40,7 +85,10 @@ class TokenizedCorpus(KVStore):
     file_index = None
     index = None
 
-    def __init__(self, path, vocab=None, tokenizer=None, shard_size=2000000, freeze_vocab=False, lowercase=False):
+    def __init__(
+            self, path, vocab=None, tokenizer=None, shard_size=2000000, freeze_vocab=False, lowercase=False,
+            remove_accents=False
+    ):
         """
         Initialize corpus storage
         :param path: path where data will be stored
@@ -49,13 +97,19 @@ class TokenizedCorpus(KVStore):
         :param shard_size: shard size in bytes
         :param freeze_vocab: whether to add new words to vocabulary
         """
-        super(TokenizedCorpus, self).__init__(path=path, shard_size=shard_size)
+        super(TokenizedCorpus, self).__init__(
+            path=path, shard_size=shard_size,
+            serializer=TokenizedCorpusSerializer.get_serializer(),
+            deserializer=TokenizedCorpusSerializer.get_deserializer()
+        )
 
         self._freeze_vocab = freeze_vocab
         self._lower = lowercase
+        self._remove_accents = remove_accents
 
         if not vocab:
-            self.vocab = SqliteVocabulary(os.path.join(path, "voc.db"))
+            # self.vocab = SqliteVocabulary(self.path.joinpath("voc.db"))
+            self.vocab = Vocabulary()
             self._freeze_vocab = False
         else:
             self.vocab = vocab
@@ -90,7 +144,7 @@ class TokenizedCorpus(KVStore):
 
         for doc in docs:
             if isinstance(doc, str):
-                tokenized_doc = list(self.tok.token_gen(doc, lower=self._lower))
+                tokenized_doc = list(self.tok.token_gen(doc, lower=self._lower, remove_accents=self._remove_accents))
             elif isinstance(doc, list):
                 tokenized_doc = doc
             elif isinstance(doc, types.GeneratorType):
@@ -112,30 +166,38 @@ class TokenizedCorpus(KVStore):
             for token in doc:
                 self.vocab.add_token(token.text)
 
-        transformed_doc = [(self.vocab[t.text], t.tailspace) for t in doc]
+        for token in doc:
+            token.id = self.vocab[token.text]
+        # transformed_doc = [(self.vocab[t.text], t.tailspace) for t in doc]
 
         doc_id = self.new_doc_id #len(self.index)
         self.new_doc_id += 1
 
-        self[doc_id] = transformed_doc
+        # self[doc_id] = transformed_doc
+        self[doc_id] = doc
         return doc_id
 
     def __len__(self):
         # return len(self.index)
         return self.new_doc_id
 
+    def get_with_id(self, doc_id):
+        doc = super().get_with_id(doc_id)
+        doc.vocabulary = self.vocab
+        return doc
+
     def __getitem__(self, doc_id):
         if isinstance(doc_id, int):
-            return Doc(self.wrap_into_token(self.get_with_id(doc_id)))
+            return self.get_with_id(doc_id)  # Doc(self.wrap_into_token(self.get_with_id(doc_id)))
         elif isinstance(doc_id, slice):
-            return (Doc(self.wrap_into_token(self.get_with_id(i))) for i in range(doc_id.start, doc_id.stop, doc_id.step))
+            return (self.get_with_id(i) for i in range(doc_id.start, doc_id.stop, doc_id.step))  #(Doc(self.wrap_into_token(self.get_with_id(i))) for i in range(doc_id.start, doc_id.stop, doc_id.step))
         elif isinstance(doc_id, Iterable):
-            return (Doc(self.wrap_into_token(self.get_with_id(i))) for i in doc_id)
+            return (self.get_with_id(doc_id) for i in doc_id)  #(Doc(self.wrap_into_token(self.get_with_id(i))) for i in doc_id)
         else:
             ValueError("Format not understood: doc_id can be int, slice, or iterable but found ", type(doc_id))
 
     def get_as_token_ids(self, doc_id):
-        return Doc(self.wrap_into_token(self.get_with_id(doc_id), fill_text=False))
+        return self.get_with_id(doc_id)  #Doc(self.wrap_into_token(self.get_with_id(doc_id), fill_text=False))
 
     def __iter__(self):
         self.iter_doc = 0
@@ -150,7 +212,11 @@ class TokenizedCorpus(KVStore):
             raise StopIteration()
 
     def wrap_into_token(self, tokens, fill_text=True):
-        return (Token(tailspace=t[1], text=self.vocab[t[0]] if fill_text else None, id=t[0]) for t in tokens)
+        for tok in tokens:
+            if fill_text:
+                tok.text = self.vocab[tok.id]
+            yield tok
+        # return (Token(tailspace=t[1], text=self.vocab[t[0]] if fill_text else None, id=t[0]) for t in tokens)
 
     def save_corpus_param(self):
         if not self.persist_tokenizer:
@@ -172,12 +238,12 @@ class TokenizedCorpus(KVStore):
             self._freeze_vocab = p.load(open(os.path.join(self.path, "corpus_params"), "rb"))
 
     def save_vocab(self):
-        # self.vocab.save(os.path.join(self.path, "vocab"))
-        self.vocab.save()
+        self.vocab.save(self.path.joinpath("vocab"))
+        # self.vocab.save()
 
     def load_vocab(self):
-        # self.vocab = Vocabulary.load(os.path.join(self.path, "vocab"))
-        pass
+        self.vocab = Vocabulary.load(self.path.joinpath("vocab"))
+        # pass
 
     def save_index(self):
         super(TokenizedCorpus, self).save_index()

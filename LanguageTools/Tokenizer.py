@@ -31,7 +31,8 @@ class Token:
 
 
 class Doc:
-    def __init__(self, tokens):
+    def __init__(self, tokens, vocabulary=None):
+        self.vocabulary = vocabulary
         if isinstance(tokens, list):
             self.tokens = tokens
         if isinstance(tokens, GeneratorType):
@@ -52,6 +53,8 @@ class Doc:
     def __str__(self):
         str_ = ""
         for t in self.tokens:
+            if t.text is None and self.vocabulary is not None:
+                t.text = self.vocabulary[t.id]
             str_ += t.text
             if t.tailspace:
                str_ += " "
@@ -132,8 +135,7 @@ class Tokenizer:
         self.tailing_space = " "
         self.no_tailing_space = ""
 
-    def __call__(self, lines_str, lower = False, remove_accents=True):
-
+    def __call__(self, lines_str, lower=False, remove_accents=True):
         tokens = self.token_gen(lines_str, lower=lower, remove_accents=remove_accents)
         return Doc(tokens)
 
@@ -144,13 +146,13 @@ class Tokenizer:
 
         match = self.pattern.search(lines)
 
-        if match is None: return iter(self.empty) #  return empty iterator if no tokens
+        if match is None: return iter(self.empty)  # return empty iterator if no tokens
 
         last_token = None; ends_at = 0
 
         while match is not None:
             starts_at = match.start()
-            tailspace = ends_at != starts_at # leading space for the current word
+            tailspace = ends_at != starts_at  # leading space for the current word
             ends_at = match.end()
             if last_token:
                 # yield last_token, self.tailing_space if leading_space else self.no_tailing_space
