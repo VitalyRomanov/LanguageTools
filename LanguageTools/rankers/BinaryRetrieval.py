@@ -8,7 +8,7 @@ from collections import Counter
 from pathlib import Path
 
 from more_itertools import windowed
-from no_hassle_kv import CompactKeyValueStore
+from no_hassle_kv import KVStore
 from psutil import virtual_memory
 from tqdm import tqdm
 
@@ -279,7 +279,7 @@ class BinaryRetrievalBiword(BinaryRetrieval):
         return [(self.get_hash(bi), 1.) for bi in self.into_bigrams(token_ids)]
 
 
-class PostingIndex(CompactKeyValueStore):
+class PostingIndex(KVStore):
 
     def __init__(self, path, shard_size=2**30, **kwargs):
         super(PostingIndex, self).__init__(

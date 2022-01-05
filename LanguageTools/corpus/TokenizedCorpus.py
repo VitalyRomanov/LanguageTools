@@ -6,11 +6,11 @@ import struct
 import types
 from typing import Iterable
 
-from no_hassle_kv import CompactKeyValueStore
+from no_hassle_kv import KVStore
 
 from LanguageTools.Tokenizer import Token, Doc
 from LanguageTools.Tokenizer import Tokenizer, Sentencizer
-from LanguageTools.Vocabulary import Vocabulary
+from LanguageTools.Vocabulary import SqliteVocabulary
 
 
 # def isiterable(obj):
@@ -74,7 +74,7 @@ class TokenizedCorpusSerializer:
         return deserialize_doc
 
 
-class TokenizedCorpus(CompactKeyValueStore):
+class TokenizedCorpus(KVStore):
     """
     Creates an on-disk storage for text corpus. Each text unit can be retrieved using an iterator or with index slices.
     Corpus is stored in shards.
@@ -108,8 +108,7 @@ class TokenizedCorpus(CompactKeyValueStore):
         self._remove_accents = remove_accents
 
         if not vocab:
-            # self.vocab = SqliteVocabulary(self.path.joinpath("voc.db"))
-            self.vocab = Vocabulary()
+            self.vocab = SqliteVocabulary(self.path.joinpath("voc.db"))
             self._freeze_vocab = False
         else:
             self.vocab = vocab
@@ -238,12 +237,12 @@ class TokenizedCorpus(CompactKeyValueStore):
             self._freeze_vocab = p.load(open(os.path.join(self.path, "corpus_params"), "rb"))
 
     def save_vocab(self):
-        self.vocab.save(self.path.joinpath("vocab"))
-        # self.vocab.save()
+        # self.vocab.save(self.path.joinpath("vocab"))
+        self.vocab.save()
 
     def load_vocab(self):
-        self.vocab = Vocabulary.load(self.path.joinpath("vocab"))
-        # pass
+        # self.vocab = Vocabulary.load(self.path.joinpath("vocab"))
+        pass
 
     def save_index(self):
         super(TokenizedCorpus, self).save_index()
