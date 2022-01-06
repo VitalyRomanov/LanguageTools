@@ -9,7 +9,7 @@ from pathlib import Path
 
 from more_itertools import windowed
 from no_hassle_kv import KVStore
-from psutil import virtual_memory
+from psutil import virtual_memory, Process
 from tqdm import tqdm
 
 from LanguageTools.Tokenizer import Doc
@@ -134,10 +134,13 @@ class BinaryRetrieval(SimilarityEngine):
             #         postings_shard[bigram].add(id_)
 
             if doc_ind % 1000 == 0:
-                size = virtual_memory().available / 1024 / 1024  # total_size(postings_shard)
+                size = Process(os.getpid()).memory_info().rss / 1024 / 1024  # memory usage is MB
+                # size = virtual_memory().available / 1024 / 1024  # total_size(postings_shard)
                 # if size >= 1024*1024*1024: #1 GB
-                if size <= 300:  # 100 MB
-                    print(f"Only {size} mb of free RAM left")
+                # if size <= 300:  # 100 MB
+                if size >= 4000:
+                    # print(f"Only {size} mb of free RAM left")
+                    print(f"Using {size} mb of RAM")
                     shards.append(dump_shard(self.corpus.path, shard_id, postings_shard))
 
                     del postings_shard
