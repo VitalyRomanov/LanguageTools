@@ -4,7 +4,7 @@ from array import array
 import mmap
 import os
 import pickle as p
-from collections import Counter
+from collections import Counter, deque
 from pathlib import Path
 
 from more_itertools import windowed
@@ -36,39 +36,98 @@ def dump_shard(path, id, postings_shard):
     return indx_name, post_name
 
 
-def merge_shards(path, vocab, shards):
-
-    shards_ = []
+def merge_shard_index(path, shards):
     terms = set()
+    shards_ = []
     for index_path, shard_path in shards:
         shard_index = p.load(open(index_path, "rb"))
+        terms.update(shard_index.keys())
+        shards_.append((shard_index, shard_path))
+
+    terms = deque(terms)
+    count = 0
+
+    merged_path = path.parent.joinpath("merged_shard_index")
+    with open(merged_path, "w") as shard_index_sink:
+        while len(terms) > 0:
+            term = terms.popleft()
+            term_positions = []
+            for shard_index, shard_path in shards_:
+                if term in shard_index:
+                    term_positions.append((shard_path, term, shard_index[term]))
+            serialized = json.dumps(p.dumps(term_positions, protocol=0).decode("ascii"))
+            shard_index_sink.write(f"{serialized}\n")
+            count += 1
+
+    return merged_path, count
+
+def merge_shards(path, vocab, shards):
+
+    merged_path, count = merge_shard_index(path, shards)
+    shards_ = {}
+    for _, shard_path in shards:
         f = open(shard_path, "r+b")
         mm = mmap.mmap(f.fileno(), 0)
-        shards_.append((shard_index, mm))
-        terms.update(shard_index.keys())
+        shards_[shard_path] = mm
 
     index = PostingIndex(path)
 
-    for t_id in tqdm(terms, desc="Postprocessing: ", leave=False):
-        p_ = set()
-
-        for s_ind, s_file in shards_:
-            if t_id in s_ind:  # term never occurred in this shard
-                pos_, len_ = s_ind[t_id]
-                postings = p.loads(s_file[pos_: pos_+len_])  # shard store sets
+    with open(merged_path, "r") as shard_index:
+        for line in tqdm(shard_index, total=count, desc="Postprocessing: "):
+            term_positions = p.loads(json.loads(line.strip()).encode("ascii"))
+            p_ = set()
+            for shard_path, t_id, (pos_, len_) in term_positions:
+                mm = shards_[shard_path]
+                postings = p.loads(mm[pos_: pos_+len_])  # shard store sets
                 p_ |= postings
 
-        doc_list = list(p_)
-        doc_list.sort()
-        index.add_posting(t_id, array("Q", doc_list))
+            doc_list = list(p_)
+            doc_list.sort()
+            index.add_posting(t_id, array("Q", doc_list))
 
     index.save()  # remove files
 
+    os.remove(merged_path)
     for index_path, shard_path in shards:
         os.remove(index_path)
         os.remove(shard_path)
 
     return index
+
+
+# def merge_shards(path, vocab, shards):
+#
+#     shards_ = []
+#     terms = set()
+#     for index_path, shard_path in shards:
+#         shard_index = p.load(open(index_path, "rb"))
+#         f = open(shard_path, "r+b")
+#         mm = mmap.mmap(f.fileno(), 0)
+#         shards_.append((shard_index, mm))
+#         terms.update(shard_index.keys())
+#
+#     index = PostingIndex(path)
+#
+#     for t_id in tqdm(terms, desc="Postprocessing: ", leave=False):
+#         p_ = set()
+#
+#         for s_ind, s_file in shards_:
+#             if t_id in s_ind:  # term never occurred in this shard
+#                 pos_, len_ = s_ind[t_id]
+#                 postings = p.loads(s_file[pos_: pos_+len_])  # shard store sets
+#                 p_ |= postings
+#
+#         doc_list = list(p_)
+#         doc_list.sort()
+#         index.add_posting(t_id, array("Q", doc_list))
+#
+#     index.save()  # remove files
+#
+#     for index_path, shard_path in shards:
+#         os.remove(index_path)
+#         os.remove(shard_path)
+#
+#     return index
 
 
 class BinaryRetrieval(SimilarityEngine):
