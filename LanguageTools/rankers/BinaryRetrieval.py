@@ -194,12 +194,12 @@ class BinaryRetrieval(SimilarityEngine):
 
             if doc_ind % 1000 == 0:
                 size = Process(os.getpid()).memory_info().rss / 1024 / 1024  # memory usage is MB
-                # size = virtual_memory().available / 1024 / 1024  # total_size(postings_shard)
+                free_size = virtual_memory().available / 1024 / 1024  # total_size(postings_shard)
                 # if size >= 1024*1024*1024: #1 GB
                 # if size <= 300:  # 100 MB
-                if size >= 4000:
+                if size >= 4000 or free_size < 500:
                     # print(f"Only {size} mb of free RAM left")
-                    print(f"Using {size} mb of RAM")
+                    print(f"Using {size} mb of RAM, {free_size} mb free")
                     shards.append(dump_shard(self.corpus.path, shard_id, postings_shard))
 
                     del postings_shard
