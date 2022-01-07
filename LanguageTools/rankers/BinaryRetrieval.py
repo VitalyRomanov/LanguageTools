@@ -15,7 +15,7 @@ from tqdm import tqdm
 from LanguageTools.Tokenizer import Doc
 from LanguageTools.corpus.DocumentCorpus import DocumentCorpus
 from LanguageTools.rankers import SimilarityEngine
-from LanguageTools.rankers.utils import check_dir_exists
+from LanguageTools.rankers.utils import check_dir_exists, ShuffleMerge
 
 
 def dump_shard(path, id, postings_shard):
@@ -61,38 +61,51 @@ def merge_shard_index(path, shards):
 
     return merged_path, count
 
-def merge_shards(path, vocab, shards):
 
-    merged_path, count = merge_shard_index(path, shards)
-    shards_ = {}
-    for _, shard_path in shards:
-        f = open(shard_path, "r+b")
-        mm = mmap.mmap(f.fileno(), 0)
-        shards_[shard_path] = mm
+def merge_shards(path, merger: ShuffleMerge):
 
     index = PostingIndex(path)
 
-    with open(merged_path, "r") as shard_index:
-        for line in tqdm(shard_index, total=count, desc="Postprocessing: "):
-            term_positions = p.loads(json.loads(line.strip()).encode("ascii"))
-            p_ = set()
-            for shard_path, t_id, (pos_, len_) in term_positions:
-                mm = shards_[shard_path]
-                postings = p.loads(mm[pos_: pos_+len_])  # shard store sets
-                p_ |= postings
-
-            doc_list = list(p_)
-            doc_list.sort()
-            index.add_posting(t_id, array("Q", doc_list))
+    for t_id, doc_list in merger.iterate_merged():
+        index.add_posting(t_id, array("Q", doc_list))
 
     index.save()  # remove files
 
-    os.remove(merged_path)
-    for index_path, shard_path in shards:
-        os.remove(index_path)
-        os.remove(shard_path)
-
     return index
+
+
+# def merge_shards(path, vocab, shards):
+#
+#     merged_path, count = merge_shard_index(path, shards)
+#     shards_ = {}
+#     for _, shard_path in shards:
+#         f = open(shard_path, "r+b")
+#         mm = mmap.mmap(f.fileno(), 0)
+#         shards_[shard_path] = mm
+#
+#     index = PostingIndex(path)
+#
+#     with open(merged_path, "r") as shard_index:
+#         for line in tqdm(shard_index, total=count, desc="Postprocessing: "):
+#             term_positions = p.loads(json.loads(line.strip()).encode("ascii"))
+#             p_ = set()
+#             for shard_path, t_id, (pos_, len_) in term_positions:
+#                 mm = shards_[shard_path]
+#                 postings = p.loads(mm[pos_: pos_+len_])  # shard store sets
+#                 p_ |= postings
+#
+#             doc_list = list(p_)
+#             doc_list.sort()
+#             index.add_posting(t_id, array("Q", doc_list))
+#
+#     index.save()  # remove files
+#
+#     os.remove(merged_path)
+#     for index_path, shard_path in shards:
+#         os.remove(index_path)
+#         os.remove(shard_path)
+#
+#     return index
 
 
 # def merge_shards(path, vocab, shards):
@@ -176,6 +189,8 @@ class BinaryRetrieval(SimilarityEngine):
         shard_id = 0
         postings_shard = dict()
 
+        merger = ShuffleMerge(self.path)
+
         for doc_ind, (id_, doc) in tqdm(
                 enumerate(self.corpus.corpus),
                 total=len(self.corpus.corpus), desc="Indexing: ", leave=False
@@ -200,20 +215,23 @@ class BinaryRetrieval(SimilarityEngine):
                 if size >= 4000 or free_size < 500:
                     # print(f"Only {size} mb of free RAM left")
                     print(f"Using {size} mb of RAM, {free_size} mb free")
-                    shards.append(dump_shard(self.corpus.path, shard_id, postings_shard))
+                    merger.dump_shard(postings_shard)
+                    # shards.append(dump_shard(self.corpus.path, shard_id, postings_shard))
 
                     del postings_shard
                     postings_shard = dict()
                     shard_id += 1
 
         if len(postings_shard) > 0:
-            shards.append(dump_shard(self.corpus.path, shard_id, postings_shard))
+            merger.dump_shard(postings_shard)
+            # shards.append(dump_shard(self.corpus.path, shard_id, postings_shard))
 
-        self.merge_shards(shards)
+        self.merge_shards(merger)
         self.save()
 
-    def merge_shards(self, shards):
-        self.inv_index = merge_shards(self.posting_path(self.path), self.corpus.corpus.vocab, shards)
+    def merge_shards(self, merger):
+        self.inv_index = merge_shards(self.posting_path(self.path), merger)
+        # self.inv_index = merge_shards(self.posting_path(self.path), self.corpus.corpus.vocab, shards)
 
     def retrieve_sub_rank(self, tokens):
 

@@ -1,9 +1,101 @@
+import json
 import os
+import pickle
+from itertools import groupby
+from mmap import mmap, ACCESS_READ
+from pathlib import Path
+from shutil import rmtree
+
+from tqdm import tqdm
 
 
 def check_dir_exists(path):
     if not os.path.isdir(path):
         os.mkdir(path)
+
+
+class ShuffleMerge:
+    def __init__(self, path: Path, num_partition_files=200):
+        self.path = path.joinpath("shard_partitions")
+        if self.path.is_dir():
+            raise Exception(f"Temp directory exists: {self.path}")
+        self.path.mkdir()
+        self.num_files = num_partition_files
+        self.files = {}
+
+    def serialize(self, obj):
+        return json.dumps(pickle.dumps(obj, protocol=0).decode("ascii"))
+
+    def deserialize(self, line):
+        return pickle.loads(json.loads(line).encode("ascii"))
+
+    def get_partition(self, key):
+        return key % self.num_files
+
+    def get_file(self, id_):
+        if id_ not in self.files:
+            self.files[id_] = open(self.path.joinpath(f"shard_{id_}"), "a")
+        return self.files[id_]
+
+    def dump_shard(self, shard):
+        for key, val in shard.items():
+            f = self.get_file(self.get_partition(key))
+            f.write(f"{key} {self.serialize(val)}\n")
+
+    def get_key_from_record(self, line):
+        return int(line[:line.find(b" ")])
+
+    def get_value_from_records(self, line):
+        return self.deserialize(line[line.find(b" ") + 1:])
+
+    def get_keys_offsets(self, file):
+        keys_offsets = []
+        start = 0
+        end = 0
+
+        line = file.readline()
+        while line != b"":
+            ln = len(line)  # only ascii
+            end += ln
+            key = self.get_key_from_record(line)
+            keys_offsets.append((key, start, end))
+            start += ln
+            line = file.readline()
+        return keys_offsets
+
+    def reduce_lists(self, key, offsets, mm):
+        doc_list = set()
+        for key, start, end in offsets:
+            doc_list |= self.get_value_from_records(mm[start:end])
+
+        doc_list = list(doc_list)
+        doc_list.sort()
+        return doc_list
+
+    def merge(self, file, file_ind, total_files):
+        with open(file, "rb") as partition:
+            mm = mmap(partition.fileno(), 0, access=ACCESS_READ)
+            keys_offsets = self.get_keys_offsets(mm)
+            num_keys = len(set(map(lambda x: x[0], keys_offsets)))
+            for key, offsets in tqdm(
+                    groupby(keys_offsets, key=lambda x: x[0]), desc=f"Process partition {file_ind}/{total_files}",
+                    total=num_keys
+            ):
+                yield key, self.reduce_lists(key, offsets, mm)
+
+    def iterate_merged(self):
+        files = list(self.path.iterdir())
+        for ind, file in enumerate(files):
+            if not file.name.startswith("shard_"):
+                continue
+            for key, val in self.merge(file, ind, len(files)):
+                yield key, val
+
+    def __del__(self):
+        for file in self.files.values():
+            if file is not None and file.closed is False:
+                file.close()
+        rmtree(self.path)
 
 
 # class CompactStorage:
