@@ -2,6 +2,9 @@ import json
 import sys
 from array import array
 import mmap
+from typing import Optional
+
+import dill
 import os
 import pickle as p
 from collections import Counter, deque
@@ -15,7 +18,7 @@ from tqdm import tqdm
 from LanguageTools.Tokenizer import Doc
 from LanguageTools.corpus.DocumentCorpus import DocumentCorpus
 from LanguageTools.rankers import SimilarityEngine
-from LanguageTools.rankers.utils import check_dir_exists, ShuffleMerge
+from LanguageTools.rankers.utils import check_dir_exists, MapReduce
 
 
 def dump_shard(path, id, postings_shard):
@@ -62,16 +65,16 @@ def merge_shard_index(path, shards):
     return merged_path, count
 
 
-def merge_shards(path, merger: ShuffleMerge):
-
-    index = PostingIndex(path)
-
-    for t_id, doc_list in merger.iterate_merged():
-        index.add_posting(t_id, array("Q", doc_list))
-
-    index.save()  # remove files
-
-    return index
+# def merge_shards(path, merger: ShuffleMerge):
+#
+#     index = PostingIndex(path)
+#
+#     for t_id, doc_list in merger.iterate_merged():
+#         index.add_posting(t_id, array("Q", doc_list))
+#
+#     index.save()  # remove files
+#
+#     return index
 
 
 # def merge_shards(path, vocab, shards):
@@ -143,6 +146,9 @@ def merge_shards(path, merger: ShuffleMerge):
 #     return index
 
 
+
+
+
 class BinaryRetrieval(SimilarityEngine):
     def __init__(self, corpus: DocumentCorpus, index_instantly=False, add_bigrams=False):
         self.path = corpus.path
@@ -176,62 +182,93 @@ class BinaryRetrieval(SimilarityEngine):
         return token_ids
 
     def build_index(self):
-        # TODO
-        # 1. include ngrams. alternative to ngrams is to use positional postings. however, ngram based implementation
-        #   is simpler and allows to include misspell tolerant queries
-        # 2. [v] (no need apparently) look into zarr
-        # 3. [v] build disk-based index SPIMI see ref in 4.7
-        # 4. compression (chapter 5)
-        # 5. Correct orderings for ranked retrievals (chapter 6)
-        # 6. Compare with SQLIte index
+        def map_fn(id_doc):
+            doc_id, token_set = id_doc
+            for token_id in token_set:
+                yield token_id, [doc_id]
 
-        shards = []
-        shard_id = 0
-        postings_shard = dict()
+        def reduce_fn(first: Optional[deque], second):
+            if first is None:
+                return deque(second)
 
-        merger = ShuffleMerge(self.path)
+            first.extend(second)
+            return first
 
-        for doc_ind, (id_, doc) in tqdm(
-                enumerate(self.corpus.corpus),
-                total=len(self.corpus.corpus), desc="Indexing: ", leave=False
-        ):
-            for token_id in self.prepare_tokens_for_index(doc):
-                assert token_id is not None, "token id is None, fatal error"
-                if token_id not in postings_shard:
-                    postings_shard[token_id] = set()
-                postings_shard[token_id].add(id_)
+        def get_data():
+            for id_, doc in self.corpus.corpus:
+                yield id_, set(token_id for token_id in self.prepare_tokens_for_index(doc))
 
-            # if self.add_bigrams:
-            #     for bigram in self.into_bigrams(doc):
-            #         if bigram not in postings_shard:
-            #             postings_shard[bigram] = set()
-            #         postings_shard[bigram].add(id_)
+        mr = MapReduce(self.path, map_fn, reduce_fn)
+        result = mr.run(get_data(), allow_parallel=False, total=len(self.corpus.corpus), desc="Process docs")
 
-            if doc_ind % 1000 == 0:
-                size = Process(os.getpid()).memory_info().rss / 1024 / 1024  # memory usage is MB
-                free_size = virtual_memory().available / 1024 / 1024  # total_size(postings_shard)
-                # if size >= 1024*1024*1024: #1 GB
-                # if size <= 300:  # 100 MB
-                if size >= 4000 or free_size < 500:
-                    # print(f"Only {size} mb of free RAM left")
-                    print(f"Using {size} mb of RAM, {free_size} mb free")
-                    merger.dump_shard(postings_shard)
-                    # shards.append(dump_shard(self.corpus.path, shard_id, postings_shard))
+        index = PostingIndex(self.posting_path(self.path))
 
-                    del postings_shard
-                    postings_shard = dict()
-                    shard_id += 1
+        for ind, (term_id, doc_list) in enumerate(result):
+            doc_list = list(set(doc_list))
+            doc_list.sort()
+            index.add_posting(term_id, array("Q", doc_list))
+            if ind % 1000000 == 0:
+                print(f"{ind} terms written to index...")
 
-        if len(postings_shard) > 0:
-            merger.dump_shard(postings_shard)
-            # shards.append(dump_shard(self.corpus.path, shard_id, postings_shard))
+        index.save()
 
-        self.merge_shards(merger)
-        self.save()
+    # def build_index(self):
+    #     # TODO
+    #     # 1. include ngrams. alternative to ngrams is to use positional postings. however, ngram based implementation
+    #     #   is simpler and allows to include misspell tolerant queries
+    #     # 2. [v] (no need apparently) look into zarr
+    #     # 3. [v] build disk-based index SPIMI see ref in 4.7
+    #     # 4. compression (chapter 5)
+    #     # 5. Correct orderings for ranked retrievals (chapter 6)
+    #     # 6. Compare with SQLIte index
+    #
+    #     shards = []
+    #     shard_id = 0
+    #     postings_shard = dict()
+    #
+    #     merger = ShuffleMerge(self.path)
+    #
+    #     for doc_ind, (id_, doc) in tqdm(
+    #             enumerate(self.corpus.corpus),
+    #             total=len(self.corpus.corpus), desc="Indexing: ", leave=False
+    #     ):
+    #         for token_id in self.prepare_tokens_for_index(doc):
+    #             assert token_id is not None, "token id is None, fatal error"
+    #             if token_id not in postings_shard:
+    #                 postings_shard[token_id] = set()
+    #             postings_shard[token_id].add(id_)
+    #
+    #         # if self.add_bigrams:
+    #         #     for bigram in self.into_bigrams(doc):
+    #         #         if bigram not in postings_shard:
+    #         #             postings_shard[bigram] = set()
+    #         #         postings_shard[bigram].add(id_)
+    #
+    #         if doc_ind % 1000 == 0:
+    #             size = Process(os.getpid()).memory_info().rss / 1024 / 1024  # memory usage is MB
+    #             free_size = virtual_memory().available / 1024 / 1024  # total_size(postings_shard)
+    #             # if size >= 1024*1024*1024: #1 GB
+    #             # if size <= 300:  # 100 MB
+    #             if size >= 4000 or free_size < 500:
+    #                 # print(f"Only {size} mb of free RAM left")
+    #                 print(f"Using {size} mb of RAM, {free_size} mb free")
+    #                 merger.dump_shard(postings_shard)
+    #                 # shards.append(dump_shard(self.corpus.path, shard_id, postings_shard))
+    #
+    #                 del postings_shard
+    #                 postings_shard = dict()
+    #                 shard_id += 1
+    #
+    #     if len(postings_shard) > 0:
+    #         merger.dump_shard(postings_shard)
+    #         # shards.append(dump_shard(self.corpus.path, shard_id, postings_shard))
+    #
+    #     self.merge_shards(merger)
+    #     self.save()
 
-    def merge_shards(self, merger):
-        self.inv_index = merge_shards(self.posting_path(self.path), merger)
-        # self.inv_index = merge_shards(self.posting_path(self.path), self.corpus.corpus.vocab, shards)
+    # def merge_shards(self, merger):
+    #     self.inv_index = merge_shards(self.posting_path(self.path), merger)
+    #     # self.inv_index = merge_shards(self.posting_path(self.path), self.corpus.corpus.vocab, shards)
 
     def retrieve_sub_rank(self, tokens):
 
@@ -345,8 +382,8 @@ class BinaryRetrievalBiword(BinaryRetrieval):
             )
         return bigram_ids
 
-    def merge_shards(self, shards):
-        self.inv_index = merge_shards(self.posting_path(self.path), self.biword_voc, shards)
+    # def merge_shards(self, shards):
+    #     self.inv_index = merge_shards(self.posting_path(self.path), self.biword_voc, shards)
 
     def into_bigrams(self, doc):
         if isinstance(doc, Doc):
