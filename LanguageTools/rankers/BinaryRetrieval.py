@@ -1,152 +1,18 @@
 import json
 import sys
 from array import array
-import mmap
 from typing import Optional
 
-import dill
-import os
-import pickle as p
 from collections import Counter, deque
 from pathlib import Path
 
 from more_itertools import windowed
 from no_hassle_kv import KVStore
-from psutil import virtual_memory, Process
-from tqdm import tqdm
 
 from LanguageTools.Tokenizer import Doc
 from LanguageTools.corpus.DocumentCorpus import DocumentCorpus
 from LanguageTools.rankers import SimilarityEngine
 from LanguageTools.rankers.utils import check_dir_exists, MapReduce
-
-
-def dump_shard(path, id, postings_shard):
-    post_name = os.path.join(path, "temp_shard_posting_{0:06d}".format(id))
-    indx_name = os.path.join(path, "temp_shard_index_{0:06d}".format(id))
-
-    index = dict()
-
-    with open(post_name, "wb") as shard_sink:
-        for key, postings in postings_shard.items():
-            position = shard_sink.tell()
-            written = shard_sink.write(p.dumps(postings, protocol=4))
-
-            index[key] = (position, written)
-
-    p.dump(index, open(indx_name, "wb"), protocol=4)
-
-    return indx_name, post_name
-
-
-def merge_shard_index(path, shards):
-    terms = set()
-    shards_ = []
-    for index_path, shard_path in shards:
-        shard_index = p.load(open(index_path, "rb"))
-        terms.update(shard_index.keys())
-        shards_.append((shard_index, shard_path))
-
-    terms = deque(terms)
-    count = 0
-
-    merged_path = path.parent.joinpath("merged_shard_index")
-    with open(merged_path, "w") as shard_index_sink:
-        while len(terms) > 0:
-            term = terms.popleft()
-            term_positions = []
-            for shard_index, shard_path in shards_:
-                if term in shard_index:
-                    term_positions.append((shard_path, term, shard_index[term]))
-            serialized = json.dumps(p.dumps(term_positions, protocol=0).decode("ascii"))
-            shard_index_sink.write(f"{serialized}\n")
-            count += 1
-
-    return merged_path, count
-
-
-# def merge_shards(path, merger: ShuffleMerge):
-#
-#     index = PostingIndex(path)
-#
-#     for t_id, doc_list in merger.iterate_merged():
-#         index.add_posting(t_id, array("Q", doc_list))
-#
-#     index.save()  # remove files
-#
-#     return index
-
-
-# def merge_shards(path, vocab, shards):
-#
-#     merged_path, count = merge_shard_index(path, shards)
-#     shards_ = {}
-#     for _, shard_path in shards:
-#         f = open(shard_path, "r+b")
-#         mm = mmap.mmap(f.fileno(), 0)
-#         shards_[shard_path] = mm
-#
-#     index = PostingIndex(path)
-#
-#     with open(merged_path, "r") as shard_index:
-#         for line in tqdm(shard_index, total=count, desc="Postprocessing: "):
-#             term_positions = p.loads(json.loads(line.strip()).encode("ascii"))
-#             p_ = set()
-#             for shard_path, t_id, (pos_, len_) in term_positions:
-#                 mm = shards_[shard_path]
-#                 postings = p.loads(mm[pos_: pos_+len_])  # shard store sets
-#                 p_ |= postings
-#
-#             doc_list = list(p_)
-#             doc_list.sort()
-#             index.add_posting(t_id, array("Q", doc_list))
-#
-#     index.save()  # remove files
-#
-#     os.remove(merged_path)
-#     for index_path, shard_path in shards:
-#         os.remove(index_path)
-#         os.remove(shard_path)
-#
-#     return index
-
-
-# def merge_shards(path, vocab, shards):
-#
-#     shards_ = []
-#     terms = set()
-#     for index_path, shard_path in shards:
-#         shard_index = p.load(open(index_path, "rb"))
-#         f = open(shard_path, "r+b")
-#         mm = mmap.mmap(f.fileno(), 0)
-#         shards_.append((shard_index, mm))
-#         terms.update(shard_index.keys())
-#
-#     index = PostingIndex(path)
-#
-#     for t_id in tqdm(terms, desc="Postprocessing: ", leave=False):
-#         p_ = set()
-#
-#         for s_ind, s_file in shards_:
-#             if t_id in s_ind:  # term never occurred in this shard
-#                 pos_, len_ = s_ind[t_id]
-#                 postings = p.loads(s_file[pos_: pos_+len_])  # shard store sets
-#                 p_ |= postings
-#
-#         doc_list = list(p_)
-#         doc_list.sort()
-#         index.add_posting(t_id, array("Q", doc_list))
-#
-#     index.save()  # remove files
-#
-#     for index_path, shard_path in shards:
-#         os.remove(index_path)
-#         os.remove(shard_path)
-#
-#     return index
-
-
-
 
 
 class BinaryRetrieval(SimilarityEngine):
@@ -182,6 +48,15 @@ class BinaryRetrieval(SimilarityEngine):
         return token_ids
 
     def build_index(self):
+        # TODO
+        # 1. include ngrams. alternative to ngrams is to use positional postings. however, ngram based implementation
+        #   is simpler and allows to include misspell tolerant queries
+        # 2. [v] (no need apparently) look into zarr
+        # 3. [v] build disk-based index SPIMI see ref in 4.7
+        # 4. compression (chapter 5)
+        # 5. Correct orderings for ranked retrievals (chapter 6)
+        # 6. Compare with SQLIte index
+
         def map_fn(id_doc):
             doc_id, token_set = id_doc
             for token_id in token_set:
@@ -211,64 +86,6 @@ class BinaryRetrieval(SimilarityEngine):
                 print(f"{ind} terms written to index...")
 
         index.save()
-
-    # def build_index(self):
-    #     # TODO
-    #     # 1. include ngrams. alternative to ngrams is to use positional postings. however, ngram based implementation
-    #     #   is simpler and allows to include misspell tolerant queries
-    #     # 2. [v] (no need apparently) look into zarr
-    #     # 3. [v] build disk-based index SPIMI see ref in 4.7
-    #     # 4. compression (chapter 5)
-    #     # 5. Correct orderings for ranked retrievals (chapter 6)
-    #     # 6. Compare with SQLIte index
-    #
-    #     shards = []
-    #     shard_id = 0
-    #     postings_shard = dict()
-    #
-    #     merger = ShuffleMerge(self.path)
-    #
-    #     for doc_ind, (id_, doc) in tqdm(
-    #             enumerate(self.corpus.corpus),
-    #             total=len(self.corpus.corpus), desc="Indexing: ", leave=False
-    #     ):
-    #         for token_id in self.prepare_tokens_for_index(doc):
-    #             assert token_id is not None, "token id is None, fatal error"
-    #             if token_id not in postings_shard:
-    #                 postings_shard[token_id] = set()
-    #             postings_shard[token_id].add(id_)
-    #
-    #         # if self.add_bigrams:
-    #         #     for bigram in self.into_bigrams(doc):
-    #         #         if bigram not in postings_shard:
-    #         #             postings_shard[bigram] = set()
-    #         #         postings_shard[bigram].add(id_)
-    #
-    #         if doc_ind % 1000 == 0:
-    #             size = Process(os.getpid()).memory_info().rss / 1024 / 1024  # memory usage is MB
-    #             free_size = virtual_memory().available / 1024 / 1024  # total_size(postings_shard)
-    #             # if size >= 1024*1024*1024: #1 GB
-    #             # if size <= 300:  # 100 MB
-    #             if size >= 4000 or free_size < 500:
-    #                 # print(f"Only {size} mb of free RAM left")
-    #                 print(f"Using {size} mb of RAM, {free_size} mb free")
-    #                 merger.dump_shard(postings_shard)
-    #                 # shards.append(dump_shard(self.corpus.path, shard_id, postings_shard))
-    #
-    #                 del postings_shard
-    #                 postings_shard = dict()
-    #                 shard_id += 1
-    #
-    #     if len(postings_shard) > 0:
-    #         merger.dump_shard(postings_shard)
-    #         # shards.append(dump_shard(self.corpus.path, shard_id, postings_shard))
-    #
-    #     self.merge_shards(merger)
-    #     self.save()
-
-    # def merge_shards(self, merger):
-    #     self.inv_index = merge_shards(self.posting_path(self.path), merger)
-    #     # self.inv_index = merge_shards(self.posting_path(self.path), self.corpus.corpus.vocab, shards)
 
     def retrieve_sub_rank(self, tokens):
 
