@@ -12,7 +12,8 @@ from no_hassle_kv import KVStore
 from LanguageTools.Tokenizer import Doc
 from LanguageTools.corpus.DocumentCorpus import DocumentCorpus
 from LanguageTools.rankers import SimilarityEngine
-from LanguageTools.rankers.utils import check_dir_exists, MapReduce
+from LanguageTools.rankers.utils import check_dir_exists
+from LanguageTools.utils import MapReduce
 
 
 class BinaryRetrieval(SimilarityEngine):
