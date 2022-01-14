@@ -4,7 +4,6 @@ import pickle
 from ast import literal_eval
 from bisect import bisect_left
 from collections import defaultdict, deque
-from copy import copy
 from itertools import chain
 from multiprocessing import Pool
 from pathlib import Path
@@ -22,8 +21,6 @@ class Shuffler:
         self.parts = []
         self.currently_written = 0
         self.opened_file = None
-
-        # self.open_next_file()
 
     @staticmethod
     def serialize(obj):
@@ -64,15 +61,6 @@ class Shuffler:
         self.close_last_file()
         self.opened_file = open(file_path, "a")
 
-    # def write(self, key, value, bytes_per_file=104857600):  # 104857600
-    #     to_write = self.kv_to_str(key, value)
-    #     self.opened_file.write(f"{to_write}\n")
-    #     self.currently_written += len(to_write)
-    #
-    #     if self.currently_written > bytes_per_file:
-    #         self.open_next_file()
-    #         self.currently_written = 0
-
     def write_sorted(self, shard):
         keys = list(shard.keys())
         keys.sort()
@@ -83,48 +71,6 @@ class Shuffler:
             value = shard[key]
             to_write = self.kv_to_str(key, value)
             self.opened_file.write(f"{to_write}\n")
-
-
-
-    # def sort_file(self, path):
-    #     with open(path, "r") as source:
-    #         lines = source.readlines()
-    #
-    #     # with Pool(4) as p:
-    #     keys = map(self.get_key_from_record, lines)
-    #
-    #     records = list(zip(keys, lines))
-    #
-    #     records.sort(key=lambda record: record[0])
-    #     return records
-
-    # def merge_sorted(self, first, second, output):
-    #     sorted_position = 0
-    #     first_line = first.readline()
-    #     second_line = second[sorted_position]
-    #
-    #     with open(output, "w") as sink:
-    #         while first_line != "" or sorted_position < len(second):
-    #             if first_line != "" and (second_line is None or self.get_key_from_record(first_line) <= second_line[0]):
-    #                 sink.write(first_line)
-    #                 first_line = first.readline()
-    #             else:
-    #                 sink.write(second_line[1])
-    #                 sorted_position += 1
-    #                 if sorted_position < len(second):
-    #                     second_line = second[sorted_position]
-    #                 else:
-    #                     second_line = None
-    #
-    # def sort_first_file(self, file):
-    #     sorted_path = file.parent.joinpath(f"{file.name}_sorted")
-    #
-    #     with open(sorted_path, "w") as sink:
-    #         sorted_lines = self.sort_file(file)
-    #         for key_line in sorted_lines:
-    #             sink.write(key_line[1])
-    #
-    #     return sorted_path
 
     @staticmethod
     def close_empty(files, first_lines):
@@ -143,8 +89,6 @@ class Shuffler:
     def merge_files(self, files, level, ord):
         f = [open(file, "r") for file in files]
         l = [file.readline() for file in f]
-
-        # f, l = self.close_empty(f, l)
 
         keys = [self.get_key_from_record(line) for line in l]
 
@@ -168,7 +112,6 @@ class Shuffler:
 
                 if new_line == "":
                     f[min_ind].close()
-                    # f.pop(min_ind)
                 else:
                     new_key = self.get_key_from_record(new_line)
                     ins_pos = bisect_left(sorted_keys, new_key)
@@ -176,26 +119,6 @@ class Shuffler:
                     sorted_lines.insert(ins_pos, new_line)
                     sorted_keys.insert(ins_pos, new_key)
                     sorted_ind.insert(ins_pos, min_ind)
-
-        # min_key = keys[0]
-        # min_key_ind = 0
-        #
-        # sorted_path = self.path.joinpath(f"sorted_{level}_{ord}")
-        #
-        # with open(sorted_path, "w") as sink:
-        #     while True:
-        #         for ind, key in enumerate(keys):
-        #             if key is not None and key < min_key:
-        #                 min_key = key
-        #                 min_key_ind = ind
-        #
-        #         if l[min_key_ind] == "":
-        #             break
-        #
-        #         sink.write(l[min_key_ind])
-        #         l[min_key_ind] = f[min_key_ind].readline()
-        #         cline = l[min_key_ind]
-        #         keys[min_key_ind] = self.get_key_from_record(cline) if cline != "" else None
 
         return sorted_path
 
@@ -220,25 +143,6 @@ class Shuffler:
         assert len(self.parts) > 0
 
         return self.merge_sorted(self.parts)
-
-    # def sort(self):
-    #     assert len(self.parts) > 0
-    #
-    #     last_sorted = self.sort_first_file(self.parts.pop(0))
-    #
-    #     for ind, file in enumerate(tqdm(self.parts, desc="Sorting...")):
-    #         sorted_path = file.parent.joinpath(f"{file.name}_sorted")
-    #
-    #         second = self.sort_file(file)
-    #
-    #         with open(last_sorted, "r") as first:
-    #             self.merge_sorted(first, second, sorted_path)
-    #
-    #         if last_sorted is not None:
-    #             os.remove(last_sorted)
-    #         last_sorted = sorted_path
-    #
-    #     return last_sorted
 
     def get_sorted(self):
         self.close_last_file()
