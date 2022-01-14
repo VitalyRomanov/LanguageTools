@@ -24,6 +24,8 @@ class Shuffler:
 
     @staticmethod
     def serialize(obj):
+        # TODO
+        # json takes too much time
         return json.dumps(pickle.dumps(obj, protocol=0).decode("ascii"))
 
     @staticmethod
@@ -38,6 +40,8 @@ class Shuffler:
 
     @classmethod
     def get_key_from_record(cls, line):
+        # TODO
+        # literal_eval takes too much time
         return literal_eval(line[:line.find(cls.delim)])
 
     @classmethod

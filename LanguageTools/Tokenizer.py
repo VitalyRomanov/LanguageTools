@@ -9,6 +9,10 @@ from LanguageTools.wrappers.nltk_wrapper import Sentencizer
 
 
 class Token:
+    id = None
+    text = None
+    tailspace = None
+
     def __init__(self, text, tailspace, id=None, **kwargs):
 
         self.id = id

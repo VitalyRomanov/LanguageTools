@@ -57,7 +57,7 @@ class TokenizedCorpusSerializer:
         format = TokenizedCorpusSerializer.format
 
         def deserialize_doc(buffer):
-            tokens = []
+            # tokens = []
             num_tokens = len(buffer) // item_size
 
             def get_tokens():
