@@ -5,7 +5,10 @@ from LanguageTools.tokenizers.regexp import SimpleTokenizer
 
 
 class Tokenizer:
-    def __init__(self, tokenizer_name="regexp", regexp=None, tokenizer_class=None):
+    def __init__(self, tokenizer_name=None, regexp=None, tokenizer_class=None):
+        if tokenizer_name is None:
+            tokenizer_name = "regexp"
+
         self._force_lower = "uncased" in tokenizer_name
 
         if tokenizer_name == "regexp":
