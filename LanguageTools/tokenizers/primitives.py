@@ -6,6 +6,9 @@ from LanguageTools.utils.extra_utils import tokens_contain
 
 
 def extract_spans(tokens, spans):
+    if len(spans) == 0:
+        return spans
+
     spans = sorted(sorted(spans, key=lambda x: x[1]), key=lambda x: x[0])
 
     start = -1
@@ -40,6 +43,9 @@ def extract_spans(tokens, spans):
 
 
 def biluo_tags_from_offsets(doc, offsets):
+    if len(offsets) == 0:
+        return ["O"] * len(doc)
+
     token_spans = extract_spans(doc, offsets)
 
     span_pos = 0
@@ -76,6 +82,54 @@ def biluo_tags_from_offsets(doc, offsets):
             current_span = token_spans[span_pos] if span_pos < len(token_spans) else None
 
     return biluo
+
+
+def parse_biluo(biluo):
+    spans = []
+
+    expected = {"B", "U", "0"}
+    expected_tag = None
+
+    c_start = 0
+
+    for ind, t in enumerate(biluo):
+        if t[0] not in expected:
+            # TODO
+            # skips U-tag if it follows incorrect labels
+            expected = {"B", "U", "0"}
+            continue
+
+        if t[0] == "U":
+            c_start = ind
+            c_end = ind + 1
+            c_type = t.split("-")[1]
+            spans.append((c_start, c_end, c_type))
+            expected = {"B", "U", "0"}
+            expected_tag = None
+        elif t[0] == "B":
+            c_start = ind
+            expected = {"I", "L"}
+            expected_tag = t.split("-")[1]
+        elif t[0] == "I":
+            if t.split("-")[1] != expected_tag:
+                expected = {"B", "U", "0"}
+                expected_tag = None
+                continue
+        elif t[0] == "L":
+            if t.split("-")[1] != expected_tag:
+                expected = {"B", "U", "0"}
+                expected_tag = None
+                continue
+            c_end = ind + 1
+            c_type = expected_tag
+            spans.append((c_start, c_end, c_type))
+            expected = {"B", "U", "0"}
+            expected_tag = None
+        elif t[0] == "0":
+            expected = {"B", "U", "0"}
+            expected_tag = None
+
+    return spans
 
 
 class Token:
