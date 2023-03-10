@@ -11,6 +11,8 @@ def extract_spans(tokens, spans):
     start = -1
     span_pos = 0
     curr_span = spans[span_pos]
+    offset_label = None if len(curr_span) != 3 else curr_span[2]
+
     token_spans = []
 
     for ind, token in enumerate(tokens):
@@ -24,16 +26,56 @@ def extract_spans(tokens, spans):
         cum_offset += token.length
 
         if cum_offset == curr_span[1]:
-            token_spans.append((start, ind + 1))
+            token_spans.append((start, ind + 1, offset_label))
             start = -1
             span_pos += 1
             if span_pos == len(spans):
                 break
             curr_span = spans[span_pos]
+            offset_label = None if len(curr_span) != 3 else curr_span[2]
 
         cum_offset += token.tailspace
 
     return token_spans
+
+
+def biluo_tags_from_offsets(doc, offsets):
+    token_spans = extract_spans(doc, offsets)
+
+    span_pos = 0
+    current_span = token_spans[span_pos]
+    span_ready = False
+
+    biluo = []
+    for ind, token in enumerate(doc):
+        if current_span is None:
+            prefix = "O"
+        else:
+            if ind == current_span[0]:
+                if ind + 1 == current_span[1]:
+                    prefix = "U-"
+                    span_ready = True
+                else:
+                    prefix = "B-"
+            elif ind + 1 == current_span[1]:
+                prefix = "L-"
+                span_ready = True
+            elif current_span[0] < ind <= current_span[1]:
+                prefix = "I-"
+            else:
+                prefix = "O"
+
+        if prefix == "O":
+            biluo.append("O")
+        else:
+            biluo.append(prefix + current_span[2])
+
+        if span_ready is True:
+            span_ready = False
+            span_pos += 1
+            current_span = token_spans[span_pos] if span_pos < len(token_spans) else None
+
+    return biluo
 
 
 class Token:
