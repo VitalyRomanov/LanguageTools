@@ -3,7 +3,7 @@ import re
 from LanguageTools.tokenizers.primitives import Doc, Token, extract_spans
 
 
-class Tokenizer:
+class SimpleTokenizer:
     regexp = "(?:(?:https?|ftp):\/\/|\b(?:[a-z\d]+\.))(?:(?:[^\s()<>]+|\((?:[^\s()<>]+|(?:\([^\s()<>]+\)))?\))+(?:\((?:[^\s()<>]+|(?:\(?:[^\s()<>]+\)))?\)|[^\s`!()\[\]{};:'\".,<>?«»“”‘’]))?|[\w][\w-]+[\w]|[\w]\.|[\w]+|[^\w\s]|[0-9]+"
     empty = ()
 
@@ -48,7 +48,7 @@ def test_offset_extraction():
     text = '\rThis is usually how I do it.\tНо лучше не повторять.\n   Ciao.'
 
     offsets = [[9, 25], [30, 32], [42, 51]]
-    tokenizer = Tokenizer()
+    tokenizer = SimpleTokenizer()
     tokens = list(tokenizer.token_gen(text))
     token_spans = extract_spans(tokens, offsets)
     for token_span, char_span in zip(token_spans, offsets):
@@ -60,7 +60,7 @@ def test_offset_extraction():
 
 def test_tokenizer():
     text = '\rThis is usually how I do it.\tНо лучше не повторять.\n   Ciao.'
-    tokenizer = Tokenizer()
+    tokenizer = SimpleTokenizer()
 
     tokens = list(tokenizer.token_gen(text))
 
