@@ -1,7 +1,6 @@
 import hashlib
 import json
 import random
-import sys
 import tempfile
 from collections import defaultdict
 from copy import copy, deepcopy
@@ -13,15 +12,12 @@ import numpy as np
 
 from tqdm import tqdm
 
+from LanguageTools.utils.configurable import Configurable
 from LanguageTools.data.encoders import TagMap, ValueEncoder
 from LanguageTools.tokenizers import biluo_tags_from_offsets as biluo_tags_from_offsets_, Tokenizer
 from LanguageTools.utils.file import read_mapping_from_json, write_mapping_to_json
 
-try:
-    from nhkv import KVStore, get_or_create_storage
-except ImportError:
-    print("Install NHKV: pip install nhkv")
-    sys.exit()
+from nhkv import KVStore, get_or_create_storage
 
 
 def print_token_tag(doc, tags):
@@ -58,6 +54,7 @@ def fix_incorrect_tags(tags):
 
 
 class SampleEntry(object):
+    # noinspection PyShadowingBuiltins
     def __init__(self, id, text, labels=None, category=None, **kwargs):
         self._storage = dict()
         self._storage["id"] = id
@@ -98,34 +95,73 @@ class MapperSpec:
         self.encoder_fn = encoder_fn
 
 
-class Batcher:
+# @dataclass
+# class BatcherSpecification:
+#     batch_size: int = 32
+#     max_seq_len: int = 512
+#     sort_by_length: bool = True
+#     tokenizer: str = None
+#     no_localization: bool = False
+#     cache_dir: str = None
+
+
+class Batcher(Configurable):
+    # config_specification = BatcherSpecification
+
     def __init__(
-            self, data, batch_size: int, seq_len: int,
-            wordmap: Dict[str, int], *, tagmap: Optional[TagMap] = None,
-            # class_weights=False,
-            sort_by_length=True, tokenizer: Optional[str] = None, no_localization=False,
-            cache_dir: Optional[Union[str, Path]] = None, **kwargs
+            self, data, wordmap: Dict[str, int], tagmap: Optional[TagMap] = None, labelmap: Optional[TagMap] = None, *,
+            batch_size: int = 32, max_seq_len: int = 512, sort_by_length: bool = True,
+            tokenizer: str = None, no_localization: bool = False,
+            cache_dir: Path = None, **kwargs
     ):
+        super(Batcher, self).__init__(locals())
+        # self.config = {
+        #     "batch_size": batch_size,
+        #     "max_seq_len": max_seq_len,
+        #     "sort_by_length": sort_by_length,
+        #     "tokenizer": tokenizer,
+        #     "no_localization": no_localization,
+        #     "cache_dir": cache_dir
+        # }
+
         self._data = data
-        self._batch_size = batch_size
-        self._max_seq_len = seq_len
-        self._tokenizer = tokenizer
         self._class_weights = None
-        self._no_localization = no_localization
-        self._nlp = Tokenizer(tokenizer)
-        self._cache_dir = Path(cache_dir) if cache_dir is not None else cache_dir
+        self._nlp = Tokenizer(self._tokenizer)
         self._valid_sentences = 0
         self._filtered_sentences = 0
         self.wordmap = wordmap
         self.tagmap = tagmap
-        self.labelmap = None
-        self._sort_by_length = sort_by_length
+        self.labelmap = labelmap
         self._data_ids = set()
         self._batch_generator = None
 
         self._create_cache()
         self._prepare_data()
         self._create_mappers(**kwargs)
+
+    @property
+    def _batch_size(self):
+        return self.config["batch_size"]
+
+    @property
+    def _max_seq_len(self):
+        return self.config["max_seq_len"]
+
+    @property
+    def _tokenizer(self):
+        return self.config["tokenizer"]
+
+    @property
+    def _no_localization(self):
+        return self.config["no_localization"]
+
+    @property
+    def _cache_dir(self):
+        return self.config["cache_dir"]
+
+    @property
+    def _sort_by_length(self):
+        return self.config["sort_by_length"]
 
     @property
     def _data_cache_path(self):
@@ -145,15 +181,15 @@ class Batcher:
 
     @property
     def _tagmap_path(self):
-        return self._cache_dir.joinpath("tagmap.json")
+        return self._current_cache_dir.joinpath("tagmap.json")
 
     @property
     def _labelmap_path(self):
-        return self._cache_dir.joinpath("labelmap.json")
+        return self._current_cache_dir.joinpath("labelmap.json")
 
     @property
     def _unique_tags_and_labels_path(self):
-        return self._cache_dir.joinpath("unique_tags_and_labels.json")
+        return self._current_cache_dir.joinpath("unique_tags_and_labels.json")
 
     @property
     def _tag_fields(self):
@@ -178,10 +214,9 @@ class Batcher:
             raise ValueError(f"Unrecognized category for classes: {how}")
 
     def _get_version_code(self):
-        signature_dict = {
-            "tokenizer": self._tokenizer, "class_weights": self._class_weights,
-            "_no_localization": self._no_localization, "wordmap": self.wordmap, "class": self.__class__.__name__
-        }
+        signature_dict = {"tokenizer": self._tokenizer, "class_weights": self._class_weights,
+                          "_no_localization": self._no_localization, "class": self.__class__.__name__,
+                          "wordmap": sorted(self.wordmap.items(), key=lambda x: x[1])}
         if hasattr(self, "_extra_signature_parameters"):
             if hasattr(self, "_extra_signature_parameters_ignore_list"):
                 signature_dict.update(
@@ -197,19 +232,22 @@ class Batcher:
 
     def _get_cache_location_name(self, cache_name):
         self._check_cache_dir()
-        return str(self._cache_dir.joinpath(cache_name))
+        return str(self._current_cache_dir.joinpath(cache_name))
 
     def _check_cache_dir(self):
-        if not hasattr(self, "_cache_dir") or self._cache_dir is None:
+        if not hasattr(self, "_current_cache_dir") or self._current_cache_dir is None:
             raise Exception("Cache directory location has not been specified yet")
 
     def _create_cache(self):
-        if self._cache_dir is None:
+        self._current_cache_dir = self._cache_dir
+        if self._current_cache_dir is None:
             self._tmp_dir = tempfile.TemporaryDirectory()
-            self._cache_dir = Path(self._tmp_dir.name)
+            self._current_cache_dir = Path(self._tmp_dir.name)
 
-        self._cache_dir = self._cache_dir.joinpath(f"{self.__class__.__name__}{self._get_version_code()}")
-        self._cache_dir.mkdir(parents=True, exist_ok=True)
+        self._current_cache_dir = self._current_cache_dir.joinpath(
+            f"{self.__class__.__name__}{self._get_version_code()}"
+        )
+        self._current_cache_dir.mkdir(parents=True, exist_ok=True)
 
         self._data_cache = get_or_create_storage(KVStore, path=self._data_cache_path)
         self._length_cache = get_or_create_storage(KVStore, path=self._length_cache_path)
@@ -332,6 +370,7 @@ class Batcher:
         fix_incorrect_tags(ents_tags)
         return ents_tags
 
+    # noinspection PyMethodMayBeStatic,PyUnusedLocal
     def _parse_additional_tags(self, text, annotations, doc, parsed):
         # for future use
         return {}
@@ -380,6 +419,7 @@ class Batcher:
     def get_default_padding(self):
         return deepcopy(self._default_padding)
 
+    # noinspection PyUnusedLocal
     def _create_mappers(self, **kwargs):
         self._mappers = []
         self._create_wordmap_encoder()
@@ -392,6 +432,7 @@ class Batcher:
     def _create_additional_encoders(self):
         pass
 
+    # noinspection PyUnusedLocal
     def _create_category_encoder(self, **kwargs):
         if self.labelmap is None:
             if self._labelmap_path.is_file():
@@ -449,6 +490,7 @@ class Batcher:
             if preproc_fn is None:
                 def preproc_fn(x):
                     return x
+            # noinspection PyShadowingNames
             encoded = np.array([encoder[preproc_fn(w)] for w in seq], dtype=np.int32)
             return encoded
 
@@ -456,6 +498,7 @@ class Batcher:
             if preproc_fn is None:
                 def preproc_fn(x):
                     return x
+            # noinspection PyShadowingNames
             encoded = np.array(encoder[preproc_fn(item)], dtype=np.int32)
             return encoded
 
@@ -636,15 +679,16 @@ def test_batcher():
     path = Path("temp_cache")
     path.mkdir(exist_ok=True, parents=True)
 
+    # noinspection PyShadowingNames
     def iterate_data(data, span_labels, sentence_labels):
         for d, sl, l in zip(data, span_labels, sentence_labels):
-            yield (d, {"ents": sl, "cats": l})
+            yield d, {"ents": sl, "cats": l}
 
     batcher = Batcher(
         list(iterate_data(data, span_labels, sentence_labels)),
-        batch_size=2,
-        seq_len=256,
         wordmap=wordmap,
+        batch_size=2,
+        max_seq_len=256,
         cache_dir=path
     )
 
@@ -653,7 +697,9 @@ def test_batcher():
     num_batches = 0
     for ind, batch in enumerate(batcher):
         if ind == 0:
+            # noinspection PyUnresolvedReferences
             assert batch["tok_ids"].shape[0] * batch["tok_ids"].shape[1] - (batch["tok_ids"] == defaults["tok_ids"]).sum() == 37
+            # noinspection PyUnresolvedReferences
             assert batch["tags"].shape[0] * batch["tags"].shape[1] - (batch["tags"] == defaults["tags"]).sum() == 12
         num_batches += 1
 
