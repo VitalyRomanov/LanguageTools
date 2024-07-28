@@ -1,18 +1,14 @@
 import logging
 from copy import copy
-from time import time
 
 import tensorflow as tf
-import tensorflow_addons as tfa
 from keras.layers import Dropout
 
-from tensorflow.keras.layers import Dense, Conv2D, Flatten, Input, Embedding, concatenate
+from tensorflow.keras.layers import Dense, Conv2D
 from tensorflow.keras import Model
 from tensorflow.keras.layers import Layer
 
-from tqdm import tqdm
-
-from LanguageTools.data.batcher import TaggerBatch
+from LanguageTools.data.deprecated.batcher import TaggerBatch
 
 
 

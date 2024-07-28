@@ -1,6 +1,4 @@
-import keras.metrics
-
-from LanguageTools.data.batcher import Batcher, TaggerBatch
+from LanguageTools.data.deprecated.batcher import Batcher, TaggerBatch
 from LanguageTools.models.CNNModel import CNNTagger
 
 import tensorflow as tf
@@ -15,11 +13,11 @@ def compute_precision_recall_f1(tp, fp, fn, eps=1e-8):
     return precision, recall, f1
 
 
-class F1Metric(keras.metrics.Metric):
+class F1Metric(tf.keras.metrics.Metric):
     def __init__(self, class_id):
         super().__init__()
-        self.p = keras.metrics.Precision(class_id=class_id)
-        self.r = keras.metrics.Recall(class_id=class_id)
+        self.p = tf.keras.metrics.Precision(class_id=class_id)
+        self.r = tf.keras.metrics.Recall(class_id=class_id)
 
     @property
     def name(self):
