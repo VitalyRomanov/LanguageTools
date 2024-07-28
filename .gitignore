@@ -4,3 +4,7 @@ __pycache__
 .DS_Store
 tokenizer_rus.pickle
 russian_chunker*
+*.pkl
+*.egg-info
+*.so
+*.c

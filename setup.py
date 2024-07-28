@@ -1,8 +1,9 @@
 from distutils.core import setup
 from Cython.Build import cythonize
 
-setup(name='LanguageTools',
-      version='1.0',
+setup(
+      name='LanguageTools',
+      version='0.0.1',
       py_modules=['LanguageTools'],
       install_requires=[
             "numpy",
@@ -12,5 +13,6 @@ setup(name='LanguageTools',
             "nltk",
             "more_itertools"
       ],
+      packages=["LanguageTools"],
       ext_modules=cythonize("LanguageTools/utils/extra_utils.pyx"),
-      )
+)
